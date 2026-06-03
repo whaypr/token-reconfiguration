@@ -15,16 +15,24 @@
 
     <div id="controls">
         <label>
+            <strong>Scenario:</strong>
+            <select id="scenarioSelect"></select>
+        </label>
+        <label>
             <strong>p (max tokens in closed neighborhood):</strong>
             <input type="number" id="pValue" value="2" min="0" max="10">
         </label>
     </div>
+
+    <div id="scenarioDescription"></div>
 
     <div id="status">Select a token to see legal moves.</div>
 
     <svg width="800" height="600"></svg>
 
     <script src="script.js"></script>
+    <script src="fairness-core.js"></script>
+    <script src="scenarios.js"></script>
 </body>
 
 </html>
