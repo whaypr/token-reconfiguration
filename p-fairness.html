@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <title>p-Fairness Graph Simulation</title>
+</head>
+
+<body>
+    <div id="instructions">
+        Orange nodes can accept a new token. Click a yellow token, then click a highlighted neighbor to move it safely.
+    </div>
+
+    <div id="controls">
+        <label>
+            <strong>p (max tokens in closed neighborhood):</strong>
+            <input type="number" id="pValue" value="2" min="0" max="10">
+        </label>
+    </div>
+
+    <div id="status">Select a token to see legal moves.</div>
+
+    <svg width="800" height="600"></svg>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

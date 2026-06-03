@@ -1,0 +1,94 @@
+body {
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: #f4f4f9;
+    margin: 0;
+    padding: 20px;
+}
+
+svg {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+#instructions {
+    margin-bottom: 10px;
+    font-size: 0.9em;
+    color: #666;
+}
+
+#controls {
+    margin-bottom: 20px;
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    display: flex;
+    gap: 20px;
+    align-items: center;
+}
+
+#status {
+    margin-bottom: 14px;
+    background: white;
+    padding: 10px 14px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+    min-height: 20px;
+    color: #333;
+    font-size: 0.95em;
+}
+
+.link {
+    stroke: #999;
+    stroke-opacity: 0.6;
+    stroke-width: 2px;
+}
+
+.node {
+    stroke: #fff;
+    stroke-width: 1.5px;
+    cursor: pointer;
+}
+
+.node.empty {
+    fill: #d7dce3;
+}
+
+.node.placeable {
+    fill: #FF9800;
+}
+
+.node.mobile {
+    fill: #4CAF50;
+}
+
+.node.frozen {
+    fill: #F44336;
+}
+
+.node.selectable {
+    stroke: #111;
+    stroke-width: 4px;
+}
+
+.node.selected {
+    stroke: #0b5;
+    stroke-width: 4px;
+}
+
+.token {
+    fill: #FFC107;
+    /* Yellow tokens */
+    stroke: #333;
+    stroke-width: 2px;
+    cursor: pointer;
+}
+
+.token.selected {
+    stroke: #111;
+    stroke-width: 3px;
+}
