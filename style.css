@@ -12,12 +12,21 @@ svg {
     background: white;
     border-radius: 8px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    cursor: grab;
+}
+
+svg:active {
+    cursor: grabbing;
 }
 
 .graph-background {
     fill: #ffffff;
     pointer-events: all;
-    cursor: default;
+    cursor: grab;
+}
+
+.graph-background:active {
+    cursor: grabbing;
 }
 
 .edge-preview {
@@ -86,7 +95,7 @@ svg {
 .node {
     stroke: #fff;
     stroke-width: 1.5px;
-    cursor: pointer;
+    cursor: move;
 }
 
 .node.empty {
