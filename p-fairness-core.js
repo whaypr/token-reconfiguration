@@ -14,45 +14,91 @@ function createPFairnessApp({
     const statusElement = document.querySelector(statusSelector);
 
     const graphNodes = nodes.map(node => ({ ...node }));
-    const graphLinks = links.map(link => ({ ...link }));
-    const nodeById = new Map(graphNodes.map(node => [node.id, node]));
+    let graphLinks = links.map(link => ({ ...link }));
+    let nodeById = new Map(graphNodes.map(node => [node.id, node]));
 
     let tokens = initialTokens.map(token => ({ ...token }));
     let selectedTokenId = null;
     let legalMoveTargets = new Set();
     let p = initialP;
+    let edgeDragState = null;
+
+    let nextNodeId = graphNodes.reduce((maxId, node) => {
+        const numericId = typeof node.id === "number" ? node.id : Number(node.id);
+        return Number.isFinite(numericId) ? Math.max(maxId, numericId) : maxId;
+    }, -1) + 1;
+
+    const defaultStatusMessage = 'Select a token to see legal moves. Middle-click empty space to add a node, middle-click a node to remove it, and right-drag from a vertex to create an edge.';
+
+    const background = svg.append("rect")
+        .attr("class", "graph-background")
+        .attr("width", width)
+        .attr("height", height);
+
+    const linkLayer = svg.append("g").attr("class", "link-layer");
+    const nodeLayer = svg.append("g").attr("class", "node-layer");
+    const tokenLayer = svg.append("g").attr("class", "token-layer");
+    const interactionLayer = svg.append("g").attr("class", "interaction-layer");
+    const edgePreview = interactionLayer.append("line")
+        .attr("class", "edge-preview")
+        .style("display", "none");
 
     const simulation = d3.forceSimulation(graphNodes)
         .force("link", d3.forceLink(graphLinks).id(d => d.id).distance(100))
         .force("charge", d3.forceManyBody().strength(-400))
         .force("center", d3.forceCenter(width / 2, height / 2));
 
-    const link = svg.append("g").selectAll(".link")
-        .data(graphLinks).enter().append("line").attr("class", "link");
-
-    const node = svg.append("g").selectAll(".node")
-        .data(graphNodes).enter().append("circle")
-        .attr("class", "node empty")
-        .attr("r", 20)
-        .on("click", (event, d) => handleNodeClick(d.id))
-        .on("dblclick", (event, d) => {
-            event.preventDefault();
-            event.stopPropagation();
-            toggleTokenAtNode(d.id);
-        });
-
-    const tokenGroup = svg.append("g");
+    function getMousePosition(event) {
+        return d3.pointer(event, svg.node());
+    }
 
     function getLinkEndpoint(endpoint) {
         return typeof endpoint === "object" ? endpoint.id : endpoint;
     }
 
+    function getLinkKey(linkData) {
+        const sourceId = getLinkEndpoint(linkData.source);
+        const targetId = getLinkEndpoint(linkData.target);
+        return String(sourceId) < String(targetId)
+            ? `${sourceId}--${targetId}`
+            : `${targetId}--${sourceId}`;
+    }
+
+    function refreshNodeIndex() {
+        nodeById = new Map(graphNodes.map(node => [node.id, node]));
+    }
+
+    function syncSimulation() {
+        refreshNodeIndex();
+        simulation.nodes(graphNodes);
+        simulation.force("link").links(graphLinks);
+        simulation.alpha(1).restart();
+    }
+
+    function positionGraphElements() {
+        linkLayer.selectAll(".link")
+            .attr("x1", d => d.source.x)
+            .attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x)
+            .attr("y2", d => d.target.y);
+
+        nodeLayer.selectAll(".node")
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y);
+
+        positionTokens();
+    }
+
+    function setStatus(message) {
+        statusElement.textContent = message;
+    }
+
     function getClosedNeighborhood(nodeId) {
         const neighborhood = new Set([nodeId]);
 
-        graphLinks.forEach(link => {
-            const sourceId = getLinkEndpoint(link.source);
-            const targetId = getLinkEndpoint(link.target);
+        graphLinks.forEach(linkData => {
+            const sourceId = getLinkEndpoint(linkData.source);
+            const targetId = getLinkEndpoint(linkData.target);
 
             if (sourceId === nodeId) neighborhood.add(targetId);
             if (targetId === nodeId) neighborhood.add(sourceId);
@@ -86,9 +132,9 @@ function createPFairnessApp({
     }
 
     function areNeighbors(sourceNodeId, targetNodeId) {
-        return graphLinks.some(link => {
-            const sourceId = getLinkEndpoint(link.source);
-            const targetId = getLinkEndpoint(link.target);
+        return graphLinks.some(linkData => {
+            const sourceId = getLinkEndpoint(linkData.source);
+            const targetId = getLinkEndpoint(linkData.target);
             return (sourceId === sourceNodeId && targetId === targetNodeId) ||
                 (sourceId === targetNodeId && targetId === sourceNodeId);
         });
@@ -126,9 +172,9 @@ function createPFairnessApp({
         }
 
         return graphLinks
-            .map(link => {
-                const sourceId = getLinkEndpoint(link.source);
-                const targetId = getLinkEndpoint(link.target);
+            .map(linkData => {
+                const sourceId = getLinkEndpoint(linkData.source);
+                const targetId = getLinkEndpoint(linkData.target);
                 if (sourceId === token.nodeId) return targetId;
                 if (targetId === token.nodeId) return sourceId;
                 return null;
@@ -140,12 +186,8 @@ function createPFairnessApp({
         return getLegalMoveTargets(tokenId).length === 0;
     }
 
-    function setStatus(message) {
-        statusElement.textContent = message;
-    }
-
     function updateNodeClasses() {
-        svg.selectAll(".node")
+        nodeLayer.selectAll(".node")
             .attr("class", d => {
                 const token = getTokenAtNode(d.id);
                 const classes = ["node"];
@@ -174,7 +216,7 @@ function createPFairnessApp({
     }
 
     function updateTokenClasses() {
-        tokenGroup.selectAll(".token")
+        tokenLayer.selectAll(".token")
             .attr("class", d => {
                 const classes = ["token"];
                 if (d.id === selectedTokenId) {
@@ -185,7 +227,7 @@ function createPFairnessApp({
     }
 
     function positionTokens() {
-        tokenGroup.selectAll(".token")
+        tokenLayer.selectAll(".token")
             .attr("cx", d => {
                 const nodeData = nodeById.get(d.nodeId);
                 return nodeData ? nodeData.x : 0;
@@ -197,11 +239,11 @@ function createPFairnessApp({
     }
 
     function renderTokens() {
-        const tokenElements = tokenGroup.selectAll(".token").data(tokens, d => d.id);
+        const tokenElements = tokenLayer.selectAll(".token").data(tokens, d => d.id);
 
         tokenElements.exit().remove();
 
-        const enterTokens = tokenElements.enter().append("circle")
+        tokenElements.enter().append("circle")
             .attr("class", "token")
             .attr("r", 10)
             .on("click", (event, d) => {
@@ -214,7 +256,6 @@ function createPFairnessApp({
                 deleteTokenAtNode(d.nodeId);
             });
 
-        enterTokens.merge(tokenElements);
         positionTokens();
         updateTokenClasses();
     }
@@ -224,7 +265,7 @@ function createPFairnessApp({
         legalMoveTargets = new Set();
         updateNodeClasses();
         updateTokenClasses();
-        setStatus('Select a token to see legal moves.');
+        setStatus(defaultStatusMessage);
     }
 
     function selectToken(tokenId) {
@@ -258,7 +299,7 @@ function createPFairnessApp({
         }
 
         token.nodeId = targetNodeId;
-        legalMoveTargets = new Set(getLegalMoveTargets(tokenId));
+        legalMoveTargets = selectedTokenId ? new Set(getLegalMoveTargets(selectedTokenId)) : new Set();
         renderTokens();
         updateNodeClasses();
 
@@ -339,6 +380,231 @@ function createPFairnessApp({
         setStatus('Click one of the highlighted neighbors to move the selected token.');
     }
 
+    function hasEdge(sourceNodeId, targetNodeId) {
+        return graphLinks.some(linkData => {
+            const sourceId = getLinkEndpoint(linkData.source);
+            const targetId = getLinkEndpoint(linkData.target);
+            return (sourceId === sourceNodeId && targetId === targetNodeId) ||
+                (sourceId === targetNodeId && targetId === sourceNodeId);
+        });
+    }
+
+    function getNodeAtPoint(x, y) {
+        const matchRadius = 22;
+        let closestNode = null;
+        let closestDistance = Infinity;
+
+        graphNodes.forEach(nodeData => {
+            if (typeof nodeData.x !== "number" || typeof nodeData.y !== "number") {
+                return;
+            }
+
+            const dx = nodeData.x - x;
+            const dy = nodeData.y - y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestNode = nodeData;
+            }
+        });
+
+        return closestDistance <= matchRadius ? closestNode : null;
+    }
+
+    function addNodeAtPoint(x, y) {
+        const nodeData = { id: nextNodeId, x, y };
+        nextNodeId += 1;
+        graphNodes.push(nodeData);
+        return nodeData;
+    }
+
+    function addEdge(sourceNodeId, targetNodeId) {
+        if (sourceNodeId === targetNodeId || hasEdge(sourceNodeId, targetNodeId)) {
+            return false;
+        }
+
+        graphLinks.push({ source: sourceNodeId, target: targetNodeId });
+        return true;
+    }
+
+    function removeNode(nodeId) {
+        const nodeIndex = graphNodes.findIndex(nodeData => nodeData.id === nodeId);
+        if (nodeIndex === -1) {
+            return false;
+        }
+
+        const tokenOnNode = getTokenAtNode(nodeId);
+        if (tokenOnNode) {
+            tokens = tokens.filter(token => token.id !== tokenOnNode.id);
+            if (selectedTokenId === tokenOnNode.id) {
+                selectedTokenId = null;
+                legalMoveTargets = new Set();
+            }
+        }
+
+        graphNodes.splice(nodeIndex, 1);
+        graphLinks = graphLinks.filter(linkData => {
+            const sourceId = getLinkEndpoint(linkData.source);
+            const targetId = getLinkEndpoint(linkData.target);
+            return sourceId !== nodeId && targetId !== nodeId;
+        });
+
+        return true;
+    }
+
+    function refreshSelectionState() {
+        legalMoveTargets = selectedTokenId ? new Set(getLegalMoveTargets(selectedTokenId)) : new Set();
+    }
+
+    function renderGraph() {
+        linkLayer.selectAll(".link")
+            .data(graphLinks, getLinkKey)
+            .join(
+                enter => enter.append("line").attr("class", "link"),
+                update => update,
+                exit => exit.remove()
+            );
+
+        nodeLayer.selectAll(".node")
+            .data(graphNodes, d => d.id)
+            .join(
+                enter => enter.append("circle")
+                    .attr("class", "node")
+                    .attr("r", 20),
+                update => update,
+                exit => exit.remove()
+            )
+            .on("click", (event, d) => handleNodeClick(d.id))
+            .on("dblclick", (event, d) => {
+                event.preventDefault();
+                event.stopPropagation();
+                toggleTokenAtNode(d.id);
+            })
+            .on("mousedown", (event, d) => handleNodeMouseDown(event, d))
+            .on("contextmenu", event => event.preventDefault());
+
+        background
+            .on("mousedown", handleBackgroundMouseDown)
+            .on("contextmenu", event => event.preventDefault());
+
+        refreshNodeIndex();
+        updateNodeClasses();
+        positionGraphElements();
+    }
+
+    function updateGraphAfterMutation(message) {
+        syncSimulation();
+        renderGraph();
+        renderTokens();
+        refreshSelectionState();
+        updateNodeClasses();
+        updateTokenClasses();
+        positionGraphElements();
+
+        if (message) {
+            setStatus(message);
+        }
+    }
+
+    function handleNodeMouseDown(event, nodeData) {
+        if (event.button === 1) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (removeNode(nodeData.id)) {
+                updateGraphAfterMutation(`Node ${nodeData.id} removed.`);
+            }
+            return;
+        }
+
+        if (event.button === 2) {
+            event.preventDefault();
+            event.stopPropagation();
+            startEdgeDrag(nodeData);
+        }
+    }
+
+    function handleBackgroundMouseDown(event) {
+        if (event.button !== 1 || event.target !== background.node()) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        const [x, y] = getMousePosition(event);
+        const nodeData = addNodeAtPoint(x, y);
+        updateGraphAfterMutation(`Node ${nodeData.id} added.`);
+    }
+
+    function startEdgeDrag(nodeData) {
+        edgeDragState = { source: nodeData };
+        edgePreview
+            .style("display", null)
+            .attr("x1", nodeData.x)
+            .attr("y1", nodeData.y)
+            .attr("x2", nodeData.x)
+            .attr("y2", nodeData.y);
+
+        window.addEventListener("mousemove", handleWindowMouseMove);
+        window.addEventListener("mouseup", handleWindowMouseUp);
+    }
+
+    function stopEdgeDrag() {
+        if (!edgeDragState) {
+            return;
+        }
+
+        edgeDragState = null;
+        edgePreview.style("display", "none");
+        window.removeEventListener("mousemove", handleWindowMouseMove);
+        window.removeEventListener("mouseup", handleWindowMouseUp);
+    }
+
+    function handleWindowMouseMove(event) {
+        if (!edgeDragState) {
+            return;
+        }
+
+        const [x, y] = getMousePosition(event);
+        edgePreview
+            .attr("x1", edgeDragState.source.x)
+            .attr("y1", edgeDragState.source.y)
+            .attr("x2", x)
+            .attr("y2", y);
+    }
+
+    function handleWindowMouseUp(event) {
+        if (!edgeDragState || event.button !== 2) {
+            return;
+        }
+
+        event.preventDefault();
+        const [x, y] = getMousePosition(event);
+        const targetNode = getNodeAtPoint(x, y);
+
+        if (targetNode && targetNode.id === edgeDragState.source.id) {
+            stopEdgeDrag();
+            return;
+        }
+
+        if (targetNode) {
+            if (addEdge(edgeDragState.source.id, targetNode.id)) {
+                updateGraphAfterMutation(`Edge added between nodes ${edgeDragState.source.id} and ${targetNode.id}.`);
+            } else {
+                setStatus(`Nodes ${edgeDragState.source.id} and ${targetNode.id} are already connected.`);
+            }
+            stopEdgeDrag();
+            return;
+        }
+
+        const newNodeData = addNodeAtPoint(x, y);
+        if (addEdge(edgeDragState.source.id, newNodeData.id)) {
+            updateGraphAfterMutation(`Node ${newNodeData.id} added and connected to node ${edgeDragState.source.id}.`);
+        }
+
+        stopEdgeDrag();
+    }
+
     function applyPValue(nextP) {
         if (Number.isNaN(nextP)) {
             pInput.value = String(p);
@@ -352,13 +618,14 @@ function createPFairnessApp({
         }
 
         p = nextP;
-        legalMoveTargets = selectedTokenId ? new Set(getLegalMoveTargets(selectedTokenId)) : new Set();
+        refreshSelectionState();
         updateNodeClasses();
         updateTokenClasses();
         setStatus(`p updated to ${p}.`);
     }
 
     function updateFairness() {
+        refreshSelectionState();
         updateNodeClasses();
         updateTokenClasses();
     }
@@ -369,15 +636,13 @@ function createPFairnessApp({
 
     pInput.value = String(p);
     pInput.addEventListener('change', handlePChange);
+    svg.on('contextmenu', event => event.preventDefault());
 
     simulation.on("tick", () => {
-        link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
-            .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
-        node.attr("cx", d => d.x).attr("cy", d => d.y);
-        positionTokens();
+        positionGraphElements();
     });
 
-    renderTokens();
+    updateGraphAfterMutation();
     updateFairness();
     clearSelection();
 
@@ -386,6 +651,11 @@ function createPFairnessApp({
         destroy() {
             simulation.stop();
             pInput.removeEventListener('change', handlePChange);
+            svg.on('contextmenu', null);
+            background.on('mousedown', null);
+            background.on('contextmenu', null);
+            window.removeEventListener('mousemove', handleWindowMouseMove);
+            window.removeEventListener('mouseup', handleWindowMouseUp);
             svg.selectAll('*').remove();
         },
     };
