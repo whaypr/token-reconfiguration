@@ -57,6 +57,74 @@ const scenarios = [
             { id: 't3', nodeId: 5 },
         ],
     },
+    {
+        id: 'grid4',
+        name: '4x4 Grid',
+        description: 'A 4x4 grid; useful to observe local neighborhood packing.',
+        initialP: 2,
+        nodes: Array.from({ length: 16 }, (_, i) => ({ id: i })),
+        links: (() => {
+            const L = [];
+            const cols = 4;
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const id = r * cols + c;
+                    if (c < cols - 1) L.push({ source: id, target: id + 1 });
+                    if (r < 3) L.push({ source: id, target: id + cols });
+                }
+            }
+            return L;
+        })(),
+        tokens: [{ id: 't1', nodeId: 0 }, { id: 't2', nodeId: 5 }, { id: 't3', nodeId: 10 }],
+    },
+    {
+        id: 'two_cliques',
+        name: 'Two Cliques',
+        description: 'Two 5-node cliques connected by a bridge edge; shows highly connected regions.',
+        initialP: 3,
+        nodes: Array.from({ length: 10 }, (_, i) => ({ id: i })),
+        links: (() => {
+            const L = [];
+            for (let a = 0; a < 5; a++) for (let b = a + 1; b < 5; b++) L.push({ source: a, target: b });
+            for (let a = 5; a < 10; a++) for (let b = a + 1; b < 10; b++) L.push({ source: a, target: b });
+            L.push({ source: 4, target: 5 });
+            return L;
+        })(),
+        tokens: [{ id: 't1', nodeId: 0 }, { id: 't2', nodeId: 2 }, { id: 't3', nodeId: 7 }, { id: 't4', nodeId: 9 }],
+    },
+    {
+        id: 'binary_tree',
+        name: 'Balanced Tree',
+        description: 'A small binary tree (depth 3) to illustrate hierarchical neighborhoods.',
+        initialP: 2,
+        nodes: Array.from({ length: 15 }, (_, i) => ({ id: i })),
+        links: (() => {
+            const L = [];
+            for (let i = 0; i < 7; i++) {
+                L.push({ source: i, target: 2 * i + 1 });
+                L.push({ source: i, target: 2 * i + 2 });
+            }
+            return L;
+        })(),
+        tokens: [{ id: 't1', nodeId: 0 }, { id: 't2', nodeId: 3 }, { id: 't3', nodeId: 6 }],
+    },
+    {
+        id: 'sparse_random',
+        name: 'Sparse Random',
+        description: 'A small random sparse graph to explore varied local degrees.',
+        initialP: 1,
+        nodes: Array.from({ length: 14 }, (_, i) => ({ id: i })),
+        links: (() => {
+            const L = [];
+            const edges = [[0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [5, 6], [4, 7], [7, 8], [8, 9], [9, 10], [10, 11], [11, 12], [12, 13]];
+            edges.forEach(e => L.push({ source: e[0], target: e[1] }));
+            // add a couple extra chords
+            L.push({ source: 2, target: 6 });
+            L.push({ source: 4, target: 9 });
+            return L;
+        })(),
+        tokens: [{ id: 't1', nodeId: 1 }, { id: 't2', nodeId: 6 }, { id: 't3', nodeId: 11 }],
+    }
 ];
 
 window.pFairnessScenarios = scenarios;
