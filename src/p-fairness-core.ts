@@ -506,6 +506,45 @@ export function createPFairnessApp({
         });
     }
 
+    function isEdgeAdditionValid(sourceNodeId: NodeId, targetNodeId: NodeId): boolean {
+        if (sourceNodeId === targetNodeId || hasEdge(sourceNodeId, targetNodeId)) {
+            return false;
+        }
+
+        const proposedLinks = [...graphLinks, { source: sourceNodeId, target: targetNodeId }];
+
+        return graphNodes.every(nodeData => {
+            const neighborhood = new Set<NodeId>([nodeData.id]);
+
+            proposedLinks.forEach(linkData => {
+                const linkSourceId = getLinkEndpoint(linkData.source as NodeId | GraphNode);
+                const linkTargetId = getLinkEndpoint(linkData.target as NodeId | GraphNode);
+
+                if (linkSourceId === nodeData.id) {
+                    neighborhood.add(linkTargetId);
+                }
+
+                if (linkTargetId === nodeData.id) {
+                    neighborhood.add(linkSourceId);
+                }
+            });
+
+            return countTokensInNeighborhood(neighborhood) <= p;
+        });
+    }
+
+    function getEdgeAdditionError(sourceNodeId: NodeId, targetNodeId: NodeId): string | null {
+        if (sourceNodeId === targetNodeId) {
+            return "same";
+        }
+
+        if (hasEdge(sourceNodeId, targetNodeId)) {
+            return "duplicate";
+        }
+
+        return isEdgeAdditionValid(sourceNodeId, targetNodeId) ? null : "invalid";
+    }
+
     function addNodeAtPoint(x: number, y: number): GraphNode {
         const nodeData: GraphNode = {
             id: nextNodeId,
@@ -525,11 +564,12 @@ export function createPFairnessApp({
     }
 
     function addEdge(sourceNodeId: NodeId, targetNodeId: NodeId): boolean {
-        if (sourceNodeId === targetNodeId || hasEdge(sourceNodeId, targetNodeId)) {
+        if (getEdgeAdditionError(sourceNodeId, targetNodeId)) {
             return false;
         }
 
         graphLinks.push({ source: sourceNodeId, target: targetNodeId });
+        refreshSelectionState();
         return true;
     }
 
@@ -709,7 +749,12 @@ export function createPFairnessApp({
             if (addEdge(sourceNodeId, targetNode.id)) {
                 refreshGraphAfterMutation(`Edge added between nodes ${sourceNodeId} and ${targetNode.id}.`);
             } else {
-                setStatus(`Nodes ${sourceNodeId} and ${targetNode.id} are already connected.`);
+                const edgeError = getEdgeAdditionError(sourceNodeId, targetNode.id);
+                if (edgeError === "duplicate") {
+                    setStatus(`Nodes ${sourceNodeId} and ${targetNode.id} are already connected.`);
+                } else {
+                    setStatus(`Edge between nodes ${sourceNodeId} and ${targetNode.id} would violate p-fairness, so it was blocked.`);
+                }
             }
             stopEdgeDrag();
             return;
