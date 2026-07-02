@@ -1,4 +1,61 @@
-function createPFairnessApp({
+import * as d3 from "d3";
+import type { D3DragEvent, DragBehavior } from "d3-drag";
+import type { D3ZoomEvent, ZoomBehavior, ZoomTransform } from "d3-zoom";
+import type { Selection } from "d3-selection";
+import type { ForceLink, SimulationLinkDatum, SimulationNodeDatum } from "d3-force";
+import type {
+    GraphLink,
+    GraphNode,
+    GraphToken,
+    NodeId,
+    PFairnessApp,
+    PFairnessAppConfig,
+    ScenarioNodeInput,
+} from "./types";
+
+type ForceNodeDatum = GraphNode & SimulationNodeDatum;
+
+type ForceLinkDatum = SimulationLinkDatum<ForceNodeDatum> & {
+    source: NodeId | ForceNodeDatum;
+    target: NodeId | ForceNodeDatum;
+};
+
+type SvgSelection = Selection<SVGSVGElement, unknown, null, undefined>;
+type GroupSelection = Selection<SVGGElement, unknown, null, undefined>;
+type LinkSelection = Selection<SVGLineElement, GraphLink, SVGGElement, unknown>;
+type NodeSelection = Selection<SVGCircleElement, GraphNode, SVGGElement, unknown>;
+type TokenSelection = Selection<SVGCircleElement, GraphToken, SVGGElement, unknown>;
+
+function normalizeNodeInput(node: NodeId | ScenarioNodeInput): ScenarioNodeInput {
+    return typeof node === "object" && node !== null ? node : { id: node };
+}
+
+function getLinkEndpoint(endpoint: NodeId | GraphNode): NodeId {
+    return typeof endpoint === "object" ? endpoint.id : endpoint;
+}
+
+function createGraphNode(node: NodeId | ScenarioNodeInput, index: number, totalNodes: number, width: number, height: number): GraphNode {
+    const normalized = normalizeNodeInput(node);
+    const hasPosition = Number.isFinite(normalized.x) && Number.isFinite(normalized.y);
+    const fallbackRadius = Math.min(width, height) * 0.32;
+    const angle = totalNodes > 0 ? (index / totalNodes) * Math.PI * 2 : 0;
+    const x = hasPosition ? normalized.x! : width / 2 + Math.cos(angle) * fallbackRadius;
+    const y = hasPosition ? normalized.y! : height / 2 + Math.sin(angle) * fallbackRadius;
+
+    return {
+        id: normalized.id,
+        x,
+        y,
+        vx: 0,
+        vy: 0,
+        fx: x,
+        fy: y,
+        anchorX: x,
+        anchorY: y,
+    };
+}
+
+export function createPFairnessApp({
     svgSelector,
     pInputSelector,
     statusSelector,
@@ -6,32 +63,36 @@ function createPFairnessApp({
     links,
     tokens: initialTokens,
     initialP,
-}) {
-    const svg = d3.select(svgSelector);
-    const width = +svg.attr("width");
-    const height = +svg.attr("height");
-    const pInput = document.querySelector(pInputSelector);
-    const statusElement = document.querySelector(statusSelector);
+}: PFairnessAppConfig): PFairnessApp {
+    const svg = d3.select(svgSelector) as unknown as SvgSelection;
+    const width = Number(svg.attr("width"));
+    const height = Number(svg.attr("height"));
+    const pInput = document.querySelector(pInputSelector) as HTMLInputElement;
+    const statusElement = document.querySelector(statusSelector) as HTMLElement;
+
+    if (!pInput || !statusElement) {
+        throw new Error("p-Fairness app root elements were not found.");
+    }
 
     svg.style("touch-action", "none");
 
-    const graphNodes = nodes.map((node, index) => createGraphNode(node, index));
-    let graphLinks = links.map(link => ({ ...link }));
-    let nodeById = new Map(graphNodes.map(node => [node.id, node]));
+    const graphNodes: ForceNodeDatum[] = nodes.map((node, index) => createGraphNode(node, index, nodes.length, width, height));
+    let graphLinks: ForceLinkDatum[] = links.map(link => ({ ...link }));
+    let nodeById = new Map<NodeId, GraphNode>(graphNodes.map(node => [node.id, node]));
 
-    let tokens = initialTokens.map(token => ({ ...token }));
-    let selectedTokenId = null;
-    let legalMoveTargets = new Set();
+    let tokens: GraphToken[] = initialTokens.map(token => ({ ...token }));
+    let selectedTokenId: string | null = null;
+    let legalMoveTargets = new Set<NodeId>();
     let p = initialP;
-    let edgeDragState = null;
-    let currentTransform = d3.zoomIdentity;
+    let edgeDragState: { source: ForceNodeDatum; x1: number; y1: number; x2: number; y2: number } | null = null;
+    let currentTransform: ZoomTransform = d3.zoomIdentity;
 
     let nextNodeId = graphNodes.reduce((maxId, node) => {
         const numericId = typeof node.id === "number" ? node.id : Number(node.id);
         return Number.isFinite(numericId) ? Math.max(maxId, numericId) : maxId;
     }, -1) + 1;
 
-    const defaultStatusMessage = 'Select a token to see legal moves. Middle-click empty space to add a node, middle-click a node to remove it, right-drag from a vertex to create an edge, and left-drag the background to pan.';
+    const defaultStatusMessage = "Select a token to see legal moves. Middle-click empty space to add a node, middle-click a node to remove it, right-drag from a vertex to create an edge, and left-drag the background to pan.";
 
     const background = svg.append("rect")
         .attr("class", "graph-background")
@@ -47,84 +108,76 @@ function createPFairnessApp({
         .attr("class", "edge-preview")
         .style("display", "none");
 
-    const simulation = d3.forceSimulation(graphNodes)
+    const linkForce = d3.forceLink<ForceNodeDatum, ForceLinkDatum>(graphLinks)
+        .id((d: ForceNodeDatum) => d.id)
+        .distance(120)
+        .strength(0.75) as ForceLink<ForceNodeDatum, ForceLinkDatum>;
+    const simulation = d3.forceSimulation<ForceNodeDatum>(graphNodes)
         .velocityDecay(0.78)
-        .force("link", d3.forceLink(graphLinks).id(d => d.id).distance(120).strength(0.75))
+        .force("link", linkForce)
         .force("charge", d3.forceManyBody().strength(-35))
         .force("collide", d3.forceCollide(26))
-        .force("x", d3.forceX(d => d.anchorX).strength(0.4))
-        .force("y", d3.forceY(d => d.anchorY).strength(0.4));
+        .force("x", d3.forceX<ForceNodeDatum>(d => d.anchorX).strength(0.4))
+        .force("y", d3.forceY<ForceNodeDatum>(d => d.anchorY).strength(0.4));
 
-    const zoomBehavior = d3.zoom()
+    const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.5, 3])
-        .filter(event => event.type === "wheel" || (event.type === "mousedown" && event.button === 0) || event.type === "dblclick")
-        .on("zoom", event => {
+        .filter((event: MouseEvent | WheelEvent) => event.type === "wheel" || (event.type === "mousedown" && event.button === 0) || event.type === "dblclick")
+        .on("zoom", (event: D3ZoomEvent<SVGSVGElement, unknown>) => {
             currentTransform = event.transform;
-            graphViewport.attr("transform", currentTransform);
+            graphViewport.attr("transform", currentTransform.toString());
         });
 
-    const nodeDrag = d3.drag()
-        .filter(event => event.button === 0)
+    const nodeDrag = d3.drag<SVGCircleElement, ForceNodeDatum>()
+        .filter((event: MouseEvent) => event.button === 0)
         .on("start", handleNodeDragStart)
         .on("drag", handleNodeDragged)
         .on("end", handleNodeDragEnd);
 
-    function createGraphNode(node, index) {
-        const hasPosition = Number.isFinite(node.x) && Number.isFinite(node.y);
-        const fallbackRadius = Math.min(width, height) * 0.32;
-        const angle = nodes.length > 0 ? (index / nodes.length) * Math.PI * 2 : 0;
-        const x = hasPosition ? node.x : width / 2 + Math.cos(angle) * fallbackRadius;
-        const y = hasPosition ? node.y : height / 2 + Math.sin(angle) * fallbackRadius;
-
-        return {
-            ...node,
-            x,
-            y,
-            vx: 0,
-            vy: 0,
-            fx: x,
-            fy: y,
-            anchorX: x,
-            anchorY: y,
-        };
-    }
-
-    function toGraphPoint(event) {
+    function toGraphPoint(event: MouseEvent | PointerEvent | D3DragEvent<SVGCircleElement, ForceNodeDatum, ForceNodeDatum>): [number, number] {
         const [x, y] = d3.pointer(event, svg.node());
         return currentTransform.invert([x, y]);
     }
 
-    function getLinkEndpoint(endpoint) {
-        return typeof endpoint === "object" ? endpoint.id : endpoint;
-    }
-
-    function getLinkKey(linkData) {
-        const sourceId = getLinkEndpoint(linkData.source);
-        const targetId = getLinkEndpoint(linkData.target);
+    function getLinkKey(linkData: GraphLink): string {
+        const sourceId = getLinkEndpoint(linkData.source as NodeId | GraphNode);
+        const targetId = getLinkEndpoint(linkData.target as NodeId | GraphNode);
         return String(sourceId) < String(targetId)
             ? `${sourceId}--${targetId}`
             : `${targetId}--${sourceId}`;
     }
 
-    function refreshNodeIndex() {
+    function refreshNodeIndex(): void {
         nodeById = new Map(graphNodes.map(node => [node.id, node]));
     }
 
-    function syncSimulation() {
+    function syncSimulation(): void {
         refreshNodeIndex();
         simulation.nodes(graphNodes);
-        simulation.force("link").links(graphLinks);
+        (simulation.force("link") as ForceLink<ForceNodeDatum, ForceLinkDatum>).links(graphLinks);
         simulation.alpha(0.6).restart();
     }
 
-    function positionGraphElements() {
-        linkLayer.selectAll(".link")
-            .attr("x1", d => d.source.x)
-            .attr("y1", d => d.source.y)
-            .attr("x2", d => d.target.x)
-            .attr("y2", d => d.target.y);
+    function positionTokens(): void {
+        tokenLayer.selectAll<SVGCircleElement, GraphToken>(".token")
+            .attr("cx", d => {
+                const nodeData = nodeById.get(d.nodeId);
+                return nodeData ? nodeData.x : 0;
+            })
+            .attr("cy", d => {
+                const nodeData = nodeById.get(d.nodeId);
+                return nodeData ? nodeData.y : 0;
+            });
+    }
 
-        nodeLayer.selectAll(".node")
+    function positionGraphElements(): void {
+        linkLayer.selectAll<SVGLineElement, GraphLink>(".link")
+            .attr("x1", d => (d.source as GraphNode).x)
+            .attr("y1", d => (d.source as GraphNode).y)
+            .attr("x2", d => (d.target as GraphNode).x)
+            .attr("y2", d => (d.target as GraphNode).y);
+
+        nodeLayer.selectAll<SVGCircleElement, GraphNode>(".node")
             .attr("cx", d => d.x)
             .attr("cy", d => d.y);
 
@@ -142,16 +195,16 @@ function createPFairnessApp({
         positionTokens();
     }
 
-    function setStatus(message) {
+    function setStatus(message: string): void {
         statusElement.textContent = message;
     }
 
-    function getClosedNeighborhood(nodeId) {
-        const neighborhood = new Set([nodeId]);
+    function getClosedNeighborhood(nodeId: NodeId): Set<NodeId> {
+        const neighborhood = new Set<NodeId>([nodeId]);
 
         graphLinks.forEach(linkData => {
-            const sourceId = getLinkEndpoint(linkData.source);
-            const targetId = getLinkEndpoint(linkData.target);
+            const sourceId = getLinkEndpoint(linkData.source as NodeId | GraphNode);
+            const targetId = getLinkEndpoint(linkData.target as NodeId | GraphNode);
 
             if (sourceId === nodeId) neighborhood.add(targetId);
             if (targetId === nodeId) neighborhood.add(sourceId);
@@ -160,22 +213,22 @@ function createPFairnessApp({
         return neighborhood;
     }
 
-    function getTokenAtNode(nodeId, ignoredTokenId = null) {
+    function getTokenAtNode(nodeId: NodeId, ignoredTokenId: string | null = null): GraphToken | null {
         return tokens.find(token => token.nodeId === nodeId && token.id !== ignoredTokenId) || null;
     }
 
-    function countTokensInNeighborhood(neighborhood, candidateTokens = tokens) {
+    function countTokensInNeighborhood(neighborhood: Set<NodeId>, candidateTokens: GraphToken[] = tokens): number {
         return candidateTokens.filter(token => neighborhood.has(token.nodeId)).length;
     }
 
-    function isConfigurationValid(candidateTokens = tokens, candidateP = p) {
+    function isConfigurationValid(candidateTokens: GraphToken[] = tokens, candidateP: number = p): boolean {
         return graphNodes.every(nodeData => {
             const neighborhood = getClosedNeighborhood(nodeData.id);
             return countTokensInNeighborhood(neighborhood, candidateTokens) <= candidateP;
         });
     }
 
-    function canPlaceTokenAtNode(nodeId, candidateTokens = tokens, candidateP = p) {
+    function canPlaceTokenAtNode(nodeId: NodeId, candidateTokens: GraphToken[] = tokens, candidateP: number = p): boolean {
         if (getTokenAtNode(nodeId)) {
             return false;
         }
@@ -184,16 +237,16 @@ function createPFairnessApp({
         return isConfigurationValid(proposedTokens, candidateP);
     }
 
-    function areNeighbors(sourceNodeId, targetNodeId) {
+    function areNeighbors(sourceNodeId: NodeId, targetNodeId: NodeId): boolean {
         return graphLinks.some(linkData => {
-            const sourceId = getLinkEndpoint(linkData.source);
-            const targetId = getLinkEndpoint(linkData.target);
+            const sourceId = getLinkEndpoint(linkData.source as NodeId | GraphNode);
+            const targetId = getLinkEndpoint(linkData.target as NodeId | GraphNode);
             return (sourceId === sourceNodeId && targetId === targetNodeId) ||
                 (sourceId === targetNodeId && targetId === sourceNodeId);
         });
     }
 
-    function canMoveToken(tokenId, targetNodeId, candidateP = p) {
+    function canMoveToken(tokenId: string, targetNodeId: NodeId, candidateP: number = p): boolean {
         const token = tokens.find(item => item.id === tokenId);
         if (!token) {
             return false;
@@ -218,7 +271,7 @@ function createPFairnessApp({
         return isConfigurationValid(proposedTokens, candidateP);
     }
 
-    function getLegalMoveTargets(tokenId) {
+    function getLegalMoveTargets(tokenId: string): NodeId[] {
         const token = tokens.find(item => item.id === tokenId);
         if (!token) {
             return [];
@@ -226,21 +279,21 @@ function createPFairnessApp({
 
         return graphLinks
             .map(linkData => {
-                const sourceId = getLinkEndpoint(linkData.source);
-                const targetId = getLinkEndpoint(linkData.target);
+                const sourceId = getLinkEndpoint(linkData.source as NodeId | GraphNode);
+                const targetId = getLinkEndpoint(linkData.target as NodeId | GraphNode);
                 if (sourceId === token.nodeId) return targetId;
                 if (targetId === token.nodeId) return sourceId;
                 return null;
             })
-            .filter(nodeId => nodeId !== null && canMoveToken(tokenId, nodeId));
+            .filter((nodeId): nodeId is NodeId => nodeId !== null && canMoveToken(tokenId, nodeId));
     }
 
-    function isTokenFrozen(tokenId) {
+    function isTokenFrozen(tokenId: string): boolean {
         return getLegalMoveTargets(tokenId).length === 0;
     }
 
-    function updateNodeClasses() {
-        nodeLayer.selectAll(".node")
+    function updateNodeClasses(): void {
+        nodeLayer.selectAll<SVGCircleElement, GraphNode>(".node")
             .attr("class", d => {
                 const token = getTokenAtNode(d.id);
                 const classes = ["node"];
@@ -268,8 +321,8 @@ function createPFairnessApp({
             });
     }
 
-    function updateTokenClasses() {
-        tokenLayer.selectAll(".token")
+    function updateTokenClasses(): void {
+        tokenLayer.selectAll<SVGCircleElement, GraphToken>(".token")
             .attr("class", d => {
                 const classes = ["token"];
                 if (d.id === selectedTokenId) {
@@ -279,31 +332,19 @@ function createPFairnessApp({
             });
     }
 
-    function positionTokens() {
-        tokenLayer.selectAll(".token")
-            .attr("cx", d => {
-                const nodeData = nodeById.get(d.nodeId);
-                return nodeData ? nodeData.x : 0;
-            })
-            .attr("cy", d => {
-                const nodeData = nodeById.get(d.nodeId);
-                return nodeData ? nodeData.y : 0;
-            });
-    }
-
-    function renderTokens() {
-        const tokenElements = tokenLayer.selectAll(".token").data(tokens, d => d.id);
+    function renderTokens(): void {
+        const tokenElements = tokenLayer.selectAll<SVGCircleElement, GraphToken>(".token").data(tokens, d => d.id);
 
         tokenElements.exit().remove();
 
         tokenElements.enter().append("circle")
             .attr("class", "token")
             .attr("r", 10)
-            .on("click", (event, d) => {
+            .on("click", (event: MouseEvent, d: GraphToken) => {
                 event.stopPropagation();
                 selectToken(d.id);
             })
-            .on("dblclick", (event, d) => {
+            .on("dblclick", (event: MouseEvent, d: GraphToken) => {
                 event.preventDefault();
                 event.stopPropagation();
                 deleteTokenAtNode(d.nodeId);
@@ -313,15 +354,15 @@ function createPFairnessApp({
         updateTokenClasses();
     }
 
-    function clearSelection() {
+    function clearSelection(): void {
         selectedTokenId = null;
-        legalMoveTargets = new Set();
+        legalMoveTargets = new Set<NodeId>();
         updateNodeClasses();
         updateTokenClasses();
         setStatus(defaultStatusMessage);
     }
 
-    function selectToken(tokenId) {
+    function selectToken(tokenId: string): void {
         if (selectedTokenId === tokenId) {
             clearSelection();
             return;
@@ -339,9 +380,9 @@ function createPFairnessApp({
         }
     }
 
-    function moveToken(tokenId, targetNodeId) {
+    function moveToken(tokenId: string, targetNodeId: NodeId): boolean {
         if (!canMoveToken(tokenId, targetNodeId)) {
-            setStatus('That move would violate the p-fairness rule, so it was blocked.');
+            setStatus("That move would violate the p-fairness rule, so it was blocked.");
             return false;
         }
 
@@ -352,7 +393,7 @@ function createPFairnessApp({
         }
 
         token.nodeId = targetNodeId;
-        legalMoveTargets = selectedTokenId ? new Set(getLegalMoveTargets(selectedTokenId)) : new Set();
+        legalMoveTargets = selectedTokenId ? new Set(getLegalMoveTargets(selectedTokenId)) : new Set<NodeId>();
         renderTokens();
         updateNodeClasses();
 
@@ -365,7 +406,7 @@ function createPFairnessApp({
         return true;
     }
 
-    function addTokenAtNode(nodeId) {
+    function addTokenAtNode(nodeId: NodeId): boolean {
         if (getTokenAtNode(nodeId)) {
             return false;
         }
@@ -385,7 +426,7 @@ function createPFairnessApp({
         return true;
     }
 
-    function deleteTokenAtNode(nodeId) {
+    function deleteTokenAtNode(nodeId: NodeId): boolean {
         const token = getTokenAtNode(nodeId);
         if (!token) {
             return false;
@@ -405,7 +446,7 @@ function createPFairnessApp({
         return true;
     }
 
-    function toggleTokenAtNode(nodeId) {
+    function toggleTokenAtNode(nodeId: NodeId): void {
         if (getTokenAtNode(nodeId)) {
             deleteTokenAtNode(nodeId);
             return;
@@ -414,7 +455,7 @@ function createPFairnessApp({
         addTokenAtNode(nodeId);
     }
 
-    function handleNodeClick(nodeId) {
+    function handleNodeClick(nodeId: NodeId): void {
         if (!selectedTokenId) {
             return;
         }
@@ -430,12 +471,12 @@ function createPFairnessApp({
             return;
         }
 
-        setStatus('Click one of the highlighted neighbors to move the selected token.');
+        setStatus("Click one of the highlighted neighbors to move the selected token.");
     }
 
-    function getNodeAtPoint(x, y, ignoredNodeId = null) {
+    function getNodeAtPoint(x: number, y: number, ignoredNodeId: NodeId | null = null): GraphNode | null {
         const matchRadius = 22;
-        let closestNode = null;
+        let closestNode: GraphNode | null = null;
         let closestDistance = Infinity;
 
         graphNodes.forEach(nodeData => {
@@ -456,17 +497,17 @@ function createPFairnessApp({
         return closestDistance <= matchRadius ? closestNode : null;
     }
 
-    function hasEdge(sourceNodeId, targetNodeId) {
+    function hasEdge(sourceNodeId: NodeId, targetNodeId: NodeId): boolean {
         return graphLinks.some(linkData => {
-            const sourceId = getLinkEndpoint(linkData.source);
-            const targetId = getLinkEndpoint(linkData.target);
+            const sourceId = getLinkEndpoint(linkData.source as NodeId | GraphNode);
+            const targetId = getLinkEndpoint(linkData.target as NodeId | GraphNode);
             return (sourceId === sourceNodeId && targetId === targetNodeId) ||
                 (sourceId === targetNodeId && targetId === sourceNodeId);
         });
     }
 
-    function addNodeAtPoint(x, y) {
-        const nodeData = {
+    function addNodeAtPoint(x: number, y: number): GraphNode {
+        const nodeData: GraphNode = {
             id: nextNodeId,
             x,
             y,
@@ -483,7 +524,7 @@ function createPFairnessApp({
         return nodeData;
     }
 
-    function addEdge(sourceNodeId, targetNodeId) {
+    function addEdge(sourceNodeId: NodeId, targetNodeId: NodeId): boolean {
         if (sourceNodeId === targetNodeId || hasEdge(sourceNodeId, targetNodeId)) {
             return false;
         }
@@ -492,7 +533,11 @@ function createPFairnessApp({
         return true;
     }
 
-    function removeNode(nodeId) {
+    function refreshSelectionState(): void {
+        legalMoveTargets = selectedTokenId ? new Set(getLegalMoveTargets(selectedTokenId)) : new Set<NodeId>();
+    }
+
+    function removeNode(nodeId: NodeId): boolean {
         const nodeIndex = graphNodes.findIndex(nodeData => nodeData.id === nodeId);
         if (nodeIndex === -1) {
             return false;
@@ -503,7 +548,7 @@ function createPFairnessApp({
             tokens = tokens.filter(token => token.id !== tokenOnNode.id);
             if (selectedTokenId === tokenOnNode.id) {
                 selectedTokenId = null;
-                legalMoveTargets = new Set();
+                legalMoveTargets = new Set<NodeId>();
             }
         }
 
@@ -513,8 +558,8 @@ function createPFairnessApp({
 
         graphNodes.splice(nodeIndex, 1);
         graphLinks = graphLinks.filter(linkData => {
-            const sourceId = getLinkEndpoint(linkData.source);
-            const targetId = getLinkEndpoint(linkData.target);
+            const sourceId = getLinkEndpoint(linkData.source as NodeId | GraphNode);
+            const targetId = getLinkEndpoint(linkData.target as NodeId | GraphNode);
             return sourceId !== nodeId && targetId !== nodeId;
         });
 
@@ -523,50 +568,46 @@ function createPFairnessApp({
         return true;
     }
 
-    function refreshSelectionState() {
-        legalMoveTargets = selectedTokenId ? new Set(getLegalMoveTargets(selectedTokenId)) : new Set();
-    }
-
-    function renderGraph() {
-        linkLayer.selectAll(".link")
+    function renderGraph(): void {
+        linkLayer.selectAll<SVGLineElement, GraphLink>(".link")
             .data(graphLinks, getLinkKey)
             .join(
                 enter => enter.append("line").attr("class", "link"),
                 update => update,
-                exit => exit.remove()
+                exit => exit.remove(),
             );
 
-        const nodeSelection = nodeLayer.selectAll(".node")
+        const nodeSelection = nodeLayer.selectAll<SVGCircleElement, GraphNode>(".node")
             .data(graphNodes, d => d.id)
             .join(
                 enter => enter.append("circle")
                     .attr("class", "node")
                     .attr("r", 20),
                 update => update,
-                exit => exit.remove()
+                exit => exit.remove(),
             );
 
         nodeSelection
             .call(nodeDrag)
-            .on("click", (event, d) => handleNodeClick(d.id))
-            .on("dblclick", (event, d) => {
+            .on("click", (_event: MouseEvent, d: GraphNode) => handleNodeClick(d.id))
+            .on("dblclick", (event: MouseEvent, d: GraphNode) => {
                 event.preventDefault();
                 event.stopPropagation();
                 toggleTokenAtNode(d.id);
             })
-            .on("mousedown", (event, d) => handleNodeMouseDown(event, d))
-            .on("contextmenu", event => event.preventDefault());
+            .on("mousedown", (event: MouseEvent, d: GraphNode) => handleNodeMouseDown(event, d))
+            .on("contextmenu", (event: MouseEvent) => event.preventDefault());
 
         background
             .on("mousedown", handleBackgroundMouseDown)
-            .on("contextmenu", event => event.preventDefault());
+            .on("contextmenu", (event: MouseEvent) => event.preventDefault());
 
         refreshNodeIndex();
         updateNodeClasses();
         positionGraphElements();
     }
 
-    function refreshGraphAfterMutation(message) {
+    function refreshGraphAfterMutation(message?: string): void {
         syncSimulation();
         renderGraph();
         renderTokens();
@@ -580,7 +621,7 @@ function createPFairnessApp({
         }
     }
 
-    function handleNodeMouseDown(event, nodeData) {
+    function handleNodeMouseDown(event: MouseEvent, nodeData: GraphNode): void {
         if (event.button === 1) {
             event.preventDefault();
             event.stopPropagation();
@@ -597,7 +638,7 @@ function createPFairnessApp({
         }
     }
 
-    function handleBackgroundMouseDown(event) {
+    function handleBackgroundMouseDown(event: MouseEvent): void {
         if (event.button !== 1 || event.target !== background.node()) {
             return;
         }
@@ -609,7 +650,7 @@ function createPFairnessApp({
         refreshGraphAfterMutation(`Node ${nodeData.id} added.`);
     }
 
-    function startEdgeDrag(nodeData) {
+    function startEdgeDrag(nodeData: ForceNodeDatum): void {
         const [x, y] = [nodeData.x, nodeData.y];
         edgeDragState = {
             source: nodeData,
@@ -630,7 +671,7 @@ function createPFairnessApp({
         window.addEventListener("mouseup", handleWindowMouseUp);
     }
 
-    function stopEdgeDrag() {
+    function stopEdgeDrag(): void {
         if (!edgeDragState) {
             return;
         }
@@ -641,7 +682,7 @@ function createPFairnessApp({
         window.removeEventListener("mouseup", handleWindowMouseUp);
     }
 
-    function handleWindowMouseMove(event) {
+    function handleWindowMouseMove(event: MouseEvent): void {
         if (!edgeDragState) {
             return;
         }
@@ -654,7 +695,7 @@ function createPFairnessApp({
             .attr("y2", y);
     }
 
-    function handleWindowMouseUp(event) {
+    function handleWindowMouseUp(event: MouseEvent): void {
         if (!edgeDragState || event.button !== 2) {
             return;
         }
@@ -682,36 +723,36 @@ function createPFairnessApp({
         stopEdgeDrag();
     }
 
-    function handleNodeDragStart(event, d) {
+    function handleNodeDragStart(event: D3DragEvent<SVGCircleElement, ForceNodeDatum, ForceNodeDatum>, nodeData: ForceNodeDatum): void {
         if (!event.active) {
             simulation.alphaTarget(0.25).restart();
         }
 
-        d.fx = d.x;
-        d.fy = d.y;
-        setStatus(`Dragging node ${d.id}.`);
+        nodeData.fx = nodeData.x;
+        nodeData.fy = nodeData.y;
+        setStatus(`Dragging node ${nodeData.id}.`);
     }
 
-    function handleNodeDragged(event, d) {
-        const [x, y] = toGraphPoint(event.sourceEvent);
-        d.fx = x;
-        d.fy = y;
+    function handleNodeDragged(event: D3DragEvent<SVGCircleElement, ForceNodeDatum, ForceNodeDatum>, nodeData: ForceNodeDatum): void {
+        const [x, y] = toGraphPoint(event.sourceEvent as MouseEvent | PointerEvent);
+        nodeData.fx = x;
+        nodeData.fy = y;
         positionGraphElements();
     }
 
-    function handleNodeDragEnd(event, d) {
+    function handleNodeDragEnd(event: D3DragEvent<SVGCircleElement, ForceNodeDatum, ForceNodeDatum>, nodeData: ForceNodeDatum): void {
         if (!event.active) {
             simulation.alphaTarget(0);
         }
 
-        d.anchorX = d.x;
-        d.anchorY = d.y;
-        d.fx = d.x;
-        d.fy = d.y;
-        setStatus(`Node ${d.id} moved.`);
+        nodeData.anchorX = nodeData.x;
+        nodeData.anchorY = nodeData.y;
+        nodeData.fx = nodeData.x;
+        nodeData.fy = nodeData.y;
+        setStatus(`Node ${nodeData.id} moved.`);
     }
 
-    function applyPValue(nextP) {
+    function applyPValue(nextP: number): void {
         if (Number.isNaN(nextP)) {
             pInput.value = String(p);
             return;
@@ -730,25 +771,21 @@ function createPFairnessApp({
         setStatus(`p updated to ${p}.`);
     }
 
-    function updateFairness() {
+    function updateFairness(): void {
         refreshSelectionState();
         updateNodeClasses();
         updateTokenClasses();
     }
 
-    function handlePChange(event) {
-        applyPValue(parseInt(event.target.value, 10));
-    }
-
-    function handleZoom(event) {
-        currentTransform = event.transform;
-        graphViewport.attr("transform", currentTransform);
+    function handlePChange(event: Event): void {
+        const target = event.target as HTMLInputElement | null;
+        applyPValue(Number.parseInt(target?.value ?? "", 10));
     }
 
     pInput.value = String(p);
-    pInput.addEventListener('change', handlePChange);
+    pInput.addEventListener("change", handlePChange);
     svg.call(zoomBehavior);
-    svg.on('contextmenu', event => event.preventDefault());
+    svg.on("contextmenu", (event: MouseEvent) => event.preventDefault());
 
     simulation.on("tick", positionGraphElements);
 
@@ -760,16 +797,14 @@ function createPFairnessApp({
         setStatus,
         destroy() {
             simulation.stop();
-            pInput.removeEventListener('change', handlePChange);
-            svg.on('.zoom', null);
-            svg.on('contextmenu', null);
-            background.on('mousedown', null);
-            background.on('contextmenu', null);
-            window.removeEventListener('mousemove', handleWindowMouseMove);
-            window.removeEventListener('mouseup', handleWindowMouseUp);
-            svg.selectAll('*').remove();
+            pInput.removeEventListener("change", handlePChange);
+            svg.on(".zoom", null);
+            svg.on("contextmenu", null);
+            background.on("mousedown", null);
+            background.on("contextmenu", null);
+            window.removeEventListener("mousemove", handleWindowMouseMove);
+            window.removeEventListener("mouseup", handleWindowMouseUp);
+            svg.selectAll("*").remove();
         },
     };
 }
-
-window.createPFairnessApp = createPFairnessApp;

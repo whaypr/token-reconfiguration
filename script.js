@@ -1,28 +1,29 @@
-function bootstrap() {
-    const scenarioSelect = document.getElementById('scenarioSelect');
-    const scenarioDescription = document.getElementById('scenarioDescription');
-    const scenarios = window.pFairnessScenarios || [];
-    const createPFairnessApp = window.createPFairnessApp;
+import { createPFairnessApp } from "./p-fairness-core";
+import { scenarios } from "./scenarios";
 
-    if (!scenarioSelect || !scenarioDescription || !createPFairnessApp || scenarios.length === 0) {
+function bootstrap(): void {
+    const scenarioSelect = document.getElementById("scenarioSelect") as HTMLSelectElement;
+    const scenarioDescription = document.getElementById("scenarioDescription") as HTMLElement;
+
+    if (!scenarioSelect || !scenarioDescription || scenarios.length === 0) {
         window.setTimeout(bootstrap, 0);
         return;
     }
 
-    let currentApp = null;
+    let currentApp: ReturnType<typeof createPFairnessApp> | null = null;
 
-    function renderScenarioOptions() {
-        scenarioSelect.innerHTML = '';
+    function renderScenarioOptions(): void {
+        scenarioSelect.innerHTML = "";
 
         scenarios.forEach((scenario, index) => {
-            const option = document.createElement('option');
+            const option = document.createElement("option");
             option.value = String(index);
             option.textContent = scenario.name;
             scenarioSelect.appendChild(option);
         });
     }
 
-    function loadScenario(index) {
+    function loadScenario(index: number): void {
         const scenario = scenarios[index] || scenarios[0];
 
         if (currentApp) {
@@ -31,9 +32,9 @@ function bootstrap() {
 
         scenarioDescription.textContent = scenario.description;
         currentApp = createPFairnessApp({
-            svgSelector: 'svg',
-            pInputSelector: '#pValue',
-            statusSelector: '#status',
+            svgSelector: "svg",
+            pInputSelector: "#pValue",
+            statusSelector: "#status",
             nodes: scenario.nodes,
             links: scenario.links,
             tokens: scenario.tokens,
@@ -43,16 +44,17 @@ function bootstrap() {
 
     renderScenarioOptions();
 
-    scenarioSelect.addEventListener('change', event => {
-        loadScenario(parseInt(event.target.value, 10));
+    scenarioSelect.addEventListener("change", event => {
+        const target = event.target as HTMLSelectElement;
+        loadScenario(Number.parseInt(target.value, 10));
     });
 
-    scenarioSelect.value = '0';
+    scenarioSelect.value = "0";
     loadScenario(0);
 }
 
-if (document.readyState === 'loading') {
-    window.addEventListener('DOMContentLoaded', bootstrap, { once: true });
+if (document.readyState === "loading") {
+    window.addEventListener("DOMContentLoaded", bootstrap, { once: true });
 } else {
     bootstrap();
 }
