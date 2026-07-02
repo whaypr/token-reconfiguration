@@ -533,18 +533,6 @@ export function createPFairnessApp({
         });
     }
 
-    function getEdgeAdditionError(sourceNodeId: NodeId, targetNodeId: NodeId): string | null {
-        if (sourceNodeId === targetNodeId) {
-            return "same";
-        }
-
-        if (hasEdge(sourceNodeId, targetNodeId)) {
-            return "duplicate";
-        }
-
-        return isEdgeAdditionValid(sourceNodeId, targetNodeId) ? null : "invalid";
-    }
-
     function addNodeAtPoint(x: number, y: number): GraphNode {
         const nodeData: GraphNode = {
             id: nextNodeId,
@@ -564,11 +552,28 @@ export function createPFairnessApp({
     }
 
     function addEdge(sourceNodeId: NodeId, targetNodeId: NodeId): boolean {
-        if (getEdgeAdditionError(sourceNodeId, targetNodeId)) {
+        if (!isEdgeAdditionValid(sourceNodeId, targetNodeId)) {
             return false;
         }
 
         graphLinks.push({ source: sourceNodeId, target: targetNodeId });
+        refreshSelectionState();
+        return true;
+    }
+
+    function removeEdge(sourceNodeId: NodeId, targetNodeId: NodeId): boolean {
+        const beforeCount = graphLinks.length;
+        graphLinks = graphLinks.filter(linkData => {
+            const linkSourceId = getLinkEndpoint(linkData.source as NodeId | GraphNode);
+            const linkTargetId = getLinkEndpoint(linkData.target as NodeId | GraphNode);
+            return !((linkSourceId === sourceNodeId && linkTargetId === targetNodeId) ||
+                (linkSourceId === targetNodeId && linkTargetId === sourceNodeId));
+        });
+
+        if (graphLinks.length === beforeCount) {
+            return false;
+        }
+
         refreshSelectionState();
         return true;
     }
@@ -746,15 +751,12 @@ export function createPFairnessApp({
         const targetNode = getNodeAtPoint(x, y, sourceNodeId);
 
         if (targetNode) {
-            if (addEdge(sourceNodeId, targetNode.id)) {
+            if (removeEdge(sourceNodeId, targetNode.id)) {
+                refreshGraphAfterMutation(`Edge between nodes ${sourceNodeId} and ${targetNode.id} removed.`);
+            } else if (addEdge(sourceNodeId, targetNode.id)) {
                 refreshGraphAfterMutation(`Edge added between nodes ${sourceNodeId} and ${targetNode.id}.`);
             } else {
-                const edgeError = getEdgeAdditionError(sourceNodeId, targetNode.id);
-                if (edgeError === "duplicate") {
-                    setStatus(`Nodes ${sourceNodeId} and ${targetNode.id} are already connected.`);
-                } else {
-                    setStatus(`Edge between nodes ${sourceNodeId} and ${targetNode.id} would violate p-fairness, so it was blocked.`);
-                }
+                setStatus(`Edge between nodes ${sourceNodeId} and ${targetNode.id} would violate p-fairness, so it was blocked.`);
             }
             stopEdgeDrag();
             return;
