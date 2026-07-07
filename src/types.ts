@@ -1,5 +1,5 @@
 export type NodeId = number | string;
-export type LayoutMode = "circular" | "tree" | "grid" | "spiral" | "horizontal" | "vertical";
+export type LayoutMode = "circular" | "tree" | "grid" | "horizontal" | "vertical" | "spiral";
 
 export interface ScenarioNodeInput {
     id: NodeId;

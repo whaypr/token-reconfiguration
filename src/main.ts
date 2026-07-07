@@ -1,4 +1,4 @@
-import { createPFairnessApp } from "./p-fairness-core";
+import { createPFairnessApp } from "./core";
 import { scenarios } from "./scenarios";
 import type { LayoutMode, PFairnessApp } from "./types";
 

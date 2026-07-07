@@ -1,29 +1,10 @@
-import type { GraphLink, GraphNode, LayoutMode, NodeId } from "./types";
+import type { GraphNode, LayoutMode, NodeId } from "./types";
+import { Graph } from "./graph";
 
-interface LayoutGraph {
-    nodes: GraphNode[];
-    links: GraphLink[];
+interface LayoutContext {
+    graph: Graph;
     width: number;
     height: number;
-}
-
-function getLinkEndpoint(endpoint: NodeId | GraphNode): NodeId {
-    return typeof endpoint === "object" ? endpoint.id : endpoint;
-}
-
-function compareNodeIds(leftId: NodeId, rightId: NodeId): number {
-    const leftNumber = typeof leftId === "number" ? leftId : Number(leftId);
-    const rightNumber = typeof rightId === "number" ? rightId : Number(rightId);
-
-    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
-        return leftNumber - rightNumber;
-    }
-
-    return String(leftId).localeCompare(String(rightId));
-}
-
-function getSortedNodes(nodes: GraphNode[]): GraphNode[] {
-    return [...nodes].sort((leftNode, rightNode) => compareNodeIds(leftNode.id, rightNode.id));
 }
 
 function setNodePosition(node: GraphNode, x: number, y: number, fixed: boolean): void {
@@ -35,16 +16,16 @@ function setNodePosition(node: GraphNode, x: number, y: number, fixed: boolean):
     node.fy = fixed ? y : undefined;
 }
 
-function applyCircularLayout(graph: LayoutGraph): void {
-    const orderedNodes = getSortedNodes(graph.nodes);
+function applyCircularLayout(context: LayoutContext): void {
+    const orderedNodes = context.graph.getSortedNodes();
 
     if (orderedNodes.length === 0) {
         return;
     }
 
-    const radius = Math.min(graph.width, graph.height) * 0.32;
-    const centerX = graph.width / 2;
-    const centerY = graph.height / 2;
+    const radius = Math.min(context.width, context.height) * 0.32;
+    const centerX = context.width / 2;
+    const centerY = context.height / 2;
 
     orderedNodes.forEach((node, index) => {
         const angle = (index / orderedNodes.length) * Math.PI * 2;
@@ -54,8 +35,8 @@ function applyCircularLayout(graph: LayoutGraph): void {
     });
 }
 
-function applyGridLayout(graph: LayoutGraph): void {
-    const orderedNodes = getSortedNodes(graph.nodes);
+function applyGridLayout(context: LayoutContext): void {
+    const orderedNodes = context.graph.getSortedNodes();
 
     if (orderedNodes.length === 0) {
         return;
@@ -63,8 +44,8 @@ function applyGridLayout(graph: LayoutGraph): void {
 
     const columns = Math.ceil(Math.sqrt(orderedNodes.length));
     const rows = Math.ceil(orderedNodes.length / columns);
-    const xStep = graph.width / (columns + 1);
-    const yStep = graph.height / (rows + 1);
+    const xStep = context.width / (columns + 1);
+    const yStep = context.height / (rows + 1);
 
     orderedNodes.forEach((node, index) => {
         const row = Math.floor(index / columns);
@@ -75,15 +56,15 @@ function applyGridLayout(graph: LayoutGraph): void {
     });
 }
 
-function applyHorizontalLayout(graph: LayoutGraph): void {
-    const orderedNodes = getSortedNodes(graph.nodes);
+function applyHorizontalLayout(context: LayoutContext): void {
+    const orderedNodes = context.graph.getSortedNodes();
 
     if (orderedNodes.length === 0) {
         return;
     }
 
-    const xStep = graph.width / (orderedNodes.length + 1);
-    const centerY = graph.height / 2;
+    const xStep = context.width / (orderedNodes.length + 1);
+    const centerY = context.height / 2;
 
     orderedNodes.forEach((node, index) => {
         const x = (index + 1) * xStep;
@@ -92,15 +73,15 @@ function applyHorizontalLayout(graph: LayoutGraph): void {
     });
 }
 
-function applyVerticalLayout(graph: LayoutGraph): void {
-    const orderedNodes = getSortedNodes(graph.nodes);
+function applyVerticalLayout(context: LayoutContext): void {
+    const orderedNodes = context.graph.getSortedNodes();
 
     if (orderedNodes.length === 0) {
         return;
     }
 
-    const yStep = graph.height / (orderedNodes.length + 1);
-    const centerX = graph.width / 2;
+    const yStep = context.height / (orderedNodes.length + 1);
+    const centerX = context.width / 2;
 
     orderedNodes.forEach((node, index) => {
         const x = centerX + (index % 2 === 0 ? -24 : 24);
@@ -109,17 +90,17 @@ function applyVerticalLayout(graph: LayoutGraph): void {
     });
 }
 
-function applySpiralLayout(graph: LayoutGraph): void {
-    const orderedNodes = getSortedNodes(graph.nodes);
+function applySpiralLayout(context: LayoutContext): void {
+    const orderedNodes = context.graph.getSortedNodes();
 
     if (orderedNodes.length === 0) {
         return;
     }
 
-    const centerX = graph.width / 2;
-    const centerY = graph.height / 2;
+    const centerX = context.width / 2;
+    const centerY = context.height / 2;
     const angleStep = Math.PI * 0.75;
-    const radiusStep = Math.min(graph.width, graph.height) * 0.035;
+    const radiusStep = Math.min(context.width, context.height) * 0.035;
 
     orderedNodes.forEach((node, index) => {
         const angle = index * angleStep;
@@ -130,16 +111,18 @@ function applySpiralLayout(graph: LayoutGraph): void {
     });
 }
 
-function buildAdjacencyMap(nodes: GraphNode[], links: GraphLink[]): Map<NodeId, GraphNode[]> {
+function buildAdjacencyMap(context: LayoutContext): Map<NodeId, GraphNode[]> {
     const adjacency = new Map<NodeId, GraphNode[]>();
+    const nodes = context.graph.nodes;
+    const links = context.graph.links;
 
     nodes.forEach(node => {
         adjacency.set(node.id, []);
     });
 
     links.forEach(linkData => {
-        const sourceId = getLinkEndpoint(linkData.source);
-        const targetId = getLinkEndpoint(linkData.target);
+        const sourceId = context.graph.getLinkEndpoint(linkData.source);
+        const targetId = context.graph.getLinkEndpoint(linkData.target);
         const sourceNode = nodes.find(node => node.id === sourceId);
         const targetNode = nodes.find(node => node.id === targetId);
 
@@ -152,13 +135,14 @@ function buildAdjacencyMap(nodes: GraphNode[], links: GraphLink[]): Map<NodeId, 
     return adjacency;
 }
 
-function applyTreeLayout(graph: LayoutGraph): void {
-    const adjacency = buildAdjacencyMap(graph.nodes, graph.links);
-    const unvisitedNodes = new Set<GraphNode>(getSortedNodes(graph.nodes));
+function applyTreeLayout(context: LayoutContext): void {
+    const adjacency = buildAdjacencyMap(context);
+    const orderedNodes = context.graph.getSortedNodes();
+    const unvisitedNodes = new Set<GraphNode>(orderedNodes);
     const componentLayouts: Array<Map<number, GraphNode[]>> = [];
 
     while (unvisitedNodes.size > 0) {
-        const rootNode = getSortedNodes(graph.nodes).find(node => unvisitedNodes.has(node)) || unvisitedNodes.values().next().value;
+        const rootNode = orderedNodes.find(node => unvisitedNodes.has(node)) || unvisitedNodes.values().next().value;
         if (!rootNode) {
             break;
         }
@@ -186,7 +170,7 @@ function applyTreeLayout(graph: LayoutGraph): void {
             levels.set(depth, nodesAtLevel);
 
             (adjacency.get(node.id) || [])
-                .sort((leftNode, rightNode) => compareNodeIds(leftNode.id, rightNode.id))
+                .sort((leftNode, rightNode) => context.graph.compareNodeIds(leftNode.id, rightNode.id))
                 .forEach(neighbor => {
                     if (!visitedComponent.has(neighbor.id)) {
                         queue.push({ node: neighbor, depth: depth + 1 });
@@ -201,7 +185,7 @@ function applyTreeLayout(graph: LayoutGraph): void {
         return;
     }
 
-    const componentHeight = graph.height / componentLayouts.length;
+    const componentHeight = context.height / componentLayouts.length;
 
     componentLayouts.forEach((levels, componentIndex) => {
         const componentTop = componentIndex * componentHeight;
@@ -210,10 +194,10 @@ function applyTreeLayout(graph: LayoutGraph): void {
 
         levelEntries.forEach(([_depth, levelNodes], levelIndex) => {
             const y = componentTop + (levelIndex + 1) * levelHeight;
-            const xStep = graph.width / (levelNodes.length + 1);
+            const xStep = context.width / (levelNodes.length + 1);
 
             levelNodes
-                .sort((leftNode, rightNode) => compareNodeIds(leftNode.id, rightNode.id))
+                .sort((leftNode, rightNode) => context.graph.compareNodeIds(leftNode.id, rightNode.id))
                 .forEach((node, nodeIndex) => {
                     const x = (nodeIndex + 1) * xStep;
                     setNodePosition(node, x, y, true);
@@ -222,18 +206,18 @@ function applyTreeLayout(graph: LayoutGraph): void {
     });
 }
 
-export function applyGraphLayout(graph: LayoutGraph, layout: LayoutMode): void {
+export function applyGraphLayout(context: LayoutContext, layout: LayoutMode): void {
     if (layout === "circular") {
-        applyCircularLayout(graph);
+        applyCircularLayout(context);
     } else if (layout === "tree") {
-        applyTreeLayout(graph);
+        applyTreeLayout(context);
     } else if (layout === "grid") {
-        applyGridLayout(graph);
+        applyGridLayout(context);
     } else if (layout === "horizontal") {
-        applyHorizontalLayout(graph);
+        applyHorizontalLayout(context);
     } else if (layout === "vertical") {
-        applyVerticalLayout(graph);
+        applyVerticalLayout(context);
     } else {
-        applySpiralLayout(graph);
+        applySpiralLayout(context);
     }
 }
