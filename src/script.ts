@@ -1,16 +1,28 @@
 import { createPFairnessApp } from "./p-fairness-core";
 import { scenarios } from "./scenarios";
+import type { LayoutMode, PFairnessApp } from "./types";
 
 function bootstrap(): void {
     const scenarioSelect = document.getElementById("scenarioSelect") as HTMLSelectElement;
+    const layoutSelect = document.getElementById("layoutSelect") as HTMLSelectElement;
+    const repulsionToggle = document.getElementById("repulsionToggle") as HTMLInputElement;
     const scenarioDescription = document.getElementById("scenarioDescription") as HTMLElement;
 
-    if (!scenarioSelect || !scenarioDescription || scenarios.length === 0) {
+    if (!scenarioSelect || !layoutSelect || !repulsionToggle || !scenarioDescription || scenarios.length === 0) {
         window.setTimeout(bootstrap, 0);
         return;
     }
 
-    let currentApp: ReturnType<typeof createPFairnessApp> | null = null;
+    let currentApp: PFairnessApp | null = null;
+
+    function applyControlsToApp(): void {
+        if (!currentApp) {
+            return;
+        }
+
+        currentApp.applyLayout(layoutSelect.value as LayoutMode);
+        currentApp.setRepulsionEnabled(repulsionToggle.checked);
+    }
 
     function renderScenarioOptions(): void {
         scenarioSelect.innerHTML = "";
@@ -40,6 +52,8 @@ function bootstrap(): void {
             tokens: scenario.tokens,
             initialP: scenario.initialP,
         });
+
+        applyControlsToApp();
     }
 
     renderScenarioOptions();
@@ -49,7 +63,19 @@ function bootstrap(): void {
         loadScenario(Number.parseInt(target.value, 10));
     });
 
+    layoutSelect.addEventListener("change", () => {
+        applyControlsToApp();
+    });
+
+    repulsionToggle.addEventListener("change", () => {
+        if (currentApp) {
+            currentApp.setRepulsionEnabled(repulsionToggle.checked);
+        }
+    });
+
     scenarioSelect.value = "0";
+    layoutSelect.value = "circular";
+    repulsionToggle.checked = false;
     loadScenario(0);
 }
 

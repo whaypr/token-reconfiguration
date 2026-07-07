@@ -22,6 +22,21 @@
             <strong>p (max tokens in closed neighborhood):</strong>
             <input type="number" id="pValue" value="2" min="0" max="10">
         </label>
+        <label>
+            <strong>Layout:</strong>
+            <select id="layoutSelect">
+                <option value="circular">Circular</option>
+                <option value="tree">Tree</option>
+                <option value="grid">Grid</option>
+                <option value="spiral">Spiral</option>
+                <option value="horizontal">Horizontal</option>
+                <option value="vertical">Vertical</option>
+            </select>
+        </label>
+        <label>
+            <input type="checkbox" id="repulsionToggle">
+            <strong>Repulsive force</strong>
+        </label>
     </div>
 
     <div id="scenarioDescription"></div>

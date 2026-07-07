@@ -1,4 +1,5 @@
 export type NodeId = number | string;
+export type LayoutMode = "circular" | "tree" | "grid" | "spiral" | "horizontal" | "vertical";
 
 export interface ScenarioNodeInput {
     id: NodeId;
@@ -31,8 +32,8 @@ export interface GraphNode extends ScenarioNodeInput {
     y: number;
     vx: number;
     vy: number;
-    fx: number;
-    fy: number;
+    fx?: number;
+    fy?: number;
     anchorX: number;
     anchorY: number;
 }
@@ -59,5 +60,7 @@ export interface PFairnessAppConfig {
 
 export interface PFairnessApp {
     setStatus(message: string): void;
+    setRepulsionEnabled(enabled: boolean): void;
+    applyLayout(layout: LayoutMode): void;
     destroy(): void;
 }

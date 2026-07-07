@@ -8,10 +8,12 @@ import type {
     GraphNode,
     GraphToken,
     NodeId,
+    LayoutMode,
     PFairnessApp,
     PFairnessAppConfig,
     ScenarioNodeInput,
 } from "./types";
+import { applyGraphLayout } from "./layouts";
 
 type ForceNodeDatum = GraphNode & SimulationNodeDatum;
 
@@ -84,6 +86,8 @@ export function createPFairnessApp({
     let selectedTokenId: string | null = null;
     let legalMoveTargets = new Set<NodeId>();
     let p = initialP;
+    let currentLayout: LayoutMode = "circular";
+    let repulsionEnabled = false;
     let edgeDragState: { source: ForceNodeDatum; x1: number; y1: number; x2: number; y2: number } | null = null;
     let currentTransform: ZoomTransform = d3.zoomIdentity;
 
@@ -112,13 +116,15 @@ export function createPFairnessApp({
         .id((d: ForceNodeDatum) => d.id)
         .distance(120)
         .strength(0.75) as ForceLink<ForceNodeDatum, ForceLinkDatum>;
+    const chargeForce = d3.forceManyBody<ForceNodeDatum>().strength(-35);
+    const collideForce = d3.forceCollide<ForceNodeDatum>(26);
+    const centerForce = d3.forceCenter(width / 2, height / 2);
     const simulation = d3.forceSimulation<ForceNodeDatum>(graphNodes)
         .velocityDecay(0.78)
         .force("link", linkForce)
-        .force("charge", d3.forceManyBody().strength(-35))
-        .force("collide", d3.forceCollide(26))
-        .force("x", d3.forceX<ForceNodeDatum>(d => d.anchorX).strength(0.4))
-        .force("y", d3.forceY<ForceNodeDatum>(d => d.anchorY).strength(0.4));
+        .force("charge", null)
+        .force("collide", null)
+        .force("center", null);
 
     const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.5, 3])
@@ -139,6 +145,66 @@ export function createPFairnessApp({
         return currentTransform.invert([x, y]);
     }
 
+    function setSimulationForces(): void {
+        simulation.force("link", linkForce);
+        simulation.force("collide", repulsionEnabled ? collideForce : null);
+        simulation.force("charge", repulsionEnabled ? chargeForce : null);
+        simulation.force("center", repulsionEnabled ? centerForce : null);
+    }
+
+    function releaseNodesForRepulsion(): void {
+        graphNodes.forEach(node => {
+            node.fx = undefined;
+            node.fy = undefined;
+        });
+    }
+
+    function fixNodesForStaticLayout(): void {
+        graphNodes.forEach(node => {
+            node.fx = node.x;
+            node.fy = node.y;
+            node.anchorX = node.x;
+            node.anchorY = node.y;
+        });
+    }
+
+    function syncNodePinning(): void {
+        if (repulsionEnabled) {
+            releaseNodesForRepulsion();
+            return;
+        }
+
+        fixNodesForStaticLayout();
+    }
+
+    function applyLayout(layout: LayoutMode): void {
+        currentLayout = layout;
+
+        applyGraphLayout({
+            nodes: graphNodes,
+            links: graphLinks,
+            width,
+            height,
+        }, layout);
+
+        syncNodePinning();
+        setSimulationForces();
+        refreshNodeIndex();
+        refreshSelectionState();
+        updateNodeClasses();
+        updateTokenClasses();
+        positionGraphElements();
+        simulation.alpha(0.8).restart();
+    }
+
+    function setRepulsionEnabled(enabled: boolean): void {
+        repulsionEnabled = enabled;
+        syncNodePinning();
+        setSimulationForces();
+        positionGraphElements();
+        simulation.alpha(0.8).restart();
+    }
+
     function getLinkKey(linkData: GraphLink): string {
         const sourceId = getLinkEndpoint(linkData.source as NodeId | GraphNode);
         const targetId = getLinkEndpoint(linkData.target as NodeId | GraphNode);
@@ -155,6 +221,7 @@ export function createPFairnessApp({
         refreshNodeIndex();
         simulation.nodes(graphNodes);
         (simulation.force("link") as ForceLink<ForceNodeDatum, ForceLinkDatum>).links(graphLinks);
+        setSimulationForces();
         simulation.alpha(0.6).restart();
     }
 
@@ -546,6 +613,11 @@ export function createPFairnessApp({
             anchorY: y,
         };
 
+        if (repulsionEnabled) {
+            nodeData.fx = undefined;
+            nodeData.fy = undefined;
+        }
+
         nextNodeId += 1;
         graphNodes.push(nodeData);
         return nodeData;
@@ -784,6 +856,8 @@ export function createPFairnessApp({
         const [x, y] = toGraphPoint(event.sourceEvent as MouseEvent | PointerEvent);
         nodeData.fx = x;
         nodeData.fy = y;
+        nodeData.anchorX = x;
+        nodeData.anchorY = y;
         positionGraphElements();
     }
 
@@ -792,10 +866,15 @@ export function createPFairnessApp({
             simulation.alphaTarget(0);
         }
 
-        nodeData.anchorX = nodeData.x;
-        nodeData.anchorY = nodeData.y;
-        nodeData.fx = nodeData.x;
-        nodeData.fy = nodeData.y;
+        if (repulsionEnabled) {
+            nodeData.fx = undefined;
+            nodeData.fy = undefined;
+        } else {
+            nodeData.anchorX = nodeData.x;
+            nodeData.anchorY = nodeData.y;
+            nodeData.fx = nodeData.x;
+            nodeData.fy = nodeData.y;
+        }
         setStatus(`Node ${nodeData.id} moved.`);
     }
 
@@ -837,11 +916,13 @@ export function createPFairnessApp({
     simulation.on("tick", positionGraphElements);
 
     refreshGraphAfterMutation();
-    updateFairness();
+    applyLayout(currentLayout);
     clearSelection();
 
     return {
         setStatus,
+        setRepulsionEnabled,
+        applyLayout,
         destroy() {
             simulation.stop();
             pInput.removeEventListener("change", handlePChange);
