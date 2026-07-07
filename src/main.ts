@@ -6,9 +6,8 @@ function bootstrap(): void {
     const scenarioSelect = document.getElementById("scenarioSelect") as HTMLSelectElement;
     const layoutSelect = document.getElementById("layoutSelect") as HTMLSelectElement;
     const repulsionToggle = document.getElementById("repulsionToggle") as HTMLInputElement;
-    const scenarioDescription = document.getElementById("scenarioDescription") as HTMLElement;
 
-    if (!scenarioSelect || !layoutSelect || !repulsionToggle || !scenarioDescription || scenarios.length === 0) {
+    if (!scenarioSelect || !layoutSelect || !repulsionToggle || scenarios.length === 0) {
         window.setTimeout(bootstrap, 0);
         return;
     }
@@ -42,7 +41,6 @@ function bootstrap(): void {
             currentApp.destroy();
         }
 
-        scenarioDescription.textContent = scenario.description;
         currentApp = createPFairnessApp({
             svgSelector: "svg",
             pInputSelector: "#pValue",
@@ -54,6 +52,7 @@ function bootstrap(): void {
         });
 
         applyControlsToApp();
+        currentApp.setStatus(scenario.description);
     }
 
     renderScenarioOptions();

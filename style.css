@@ -104,15 +104,6 @@ svg:active {
     padding: 4px 8px;
 }
 
-#scenarioDescription {
-    margin-bottom: 12px;
-    color: #555;
-    font-size: 0.95em;
-    max-width: 800px;
-    text-align: center;
-}
-
-
 #status {
     margin-bottom: 14px;
     background: white;

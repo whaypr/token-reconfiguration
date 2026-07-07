@@ -37,10 +37,6 @@
             <select id="scenarioSelect"></select>
         </label>
         <label>
-            <strong>p (max tokens in closed neighborhood):</strong>
-            <input type="number" id="pValue" value="2" min="0" max="10">
-        </label>
-        <label>
             <strong>Layout:</strong>
             <select id="layoutSelect">
                 <option value="circular">Circular</option>
@@ -55,9 +51,11 @@
             <input type="checkbox" id="repulsionToggle">
             <strong>Repulsive force</strong>
         </label>
+        <label>
+            <strong>p (max tokens in closed neighborhood):</strong>
+            <input type="number" id="pValue" value="2" min="0" max="10">
+        </label>
     </div>
-
-    <div id="scenarioDescription"></div>
 
     <div id="status"></div>
 

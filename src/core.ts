@@ -568,7 +568,7 @@ export function createPFairnessApp({
 
     refreshGraphAfterMutation();
     applyLayout(currentLayout);
-    clearSelection("");
+    clearSelection();
 
     return {
         setStatus,
