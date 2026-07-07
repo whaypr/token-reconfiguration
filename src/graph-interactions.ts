@@ -4,7 +4,7 @@ import type { SubjectPosition } from "d3-drag";
 import type { Selection } from "d3-selection";
 import type { Simulation, SimulationNodeDatum } from "d3-force";
 import type { ZoomTransform } from "d3-zoom";
-import type { GraphNode, NodeId } from "./types";
+import type { GraphNode, GraphToken, NodeId } from "./types";
 
 type ForceNodeDatum = GraphNode & SimulationNodeDatum;
 
@@ -21,6 +21,7 @@ interface GraphInteractionContext {
     backgroundNode: SVGRectElement;
     edgePreview: Selection<SVGLineElement, unknown, null, undefined>;
     simulation: Simulation<ForceNodeDatum, undefined>;
+    getNodeById: (nodeId: NodeId) => ForceNodeDatum | null;
     positionGraphElements: () => void;
     setStatus: (message: string) => void;
     refreshGraphAfterMutation: (message?: string) => void;
@@ -35,6 +36,7 @@ interface GraphInteractionContext {
 
 export interface GraphInteractionController {
     nodeDrag: d3.DragBehavior<SVGCircleElement, ForceNodeDatum, ForceNodeDatum | SubjectPosition>;
+    tokenDrag: d3.DragBehavior<SVGCircleElement, GraphToken, ForceNodeDatum>;
     handleNodeMouseDown(event: MouseEvent, nodeData: GraphNode): void;
     handleBackgroundMouseDown(event: MouseEvent): void;
     stopEdgeDrag(): void;
@@ -46,7 +48,7 @@ export interface GraphInteractionController {
 function toGraphPoint(
     svg: Selection<SVGSVGElement, unknown, null, undefined>,
     currentTransform: () => ZoomTransform,
-    event: MouseEvent | PointerEvent | D3DragEvent<SVGCircleElement, ForceNodeDatum, ForceNodeDatum>,
+    event: MouseEvent | PointerEvent | D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>,
 ): [number, number] {
     const [x, y] = d3.pointer(event, svg.node());
     return currentTransform().invert([x, y]);
@@ -130,17 +132,19 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
         stopEdgeDrag();
     }
 
-    function handleNodeDragStart(event: D3DragEvent<SVGCircleElement, ForceNodeDatum, ForceNodeDatum>, nodeData: ForceNodeDatum): void {
+    function handleNodeDragStart(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>): void {
         if (!event.active) {
             context.simulation.alphaTarget(0.25).restart();
         }
 
+        const nodeData = event.subject;
         nodeData.fx = nodeData.x;
         nodeData.fy = nodeData.y;
         context.setStatus(`Dragging node ${nodeData.id}.`);
     }
 
-    function handleNodeDragged(event: D3DragEvent<SVGCircleElement, ForceNodeDatum, ForceNodeDatum>, nodeData: ForceNodeDatum): void {
+    function handleNodeDragged(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>): void {
+        const nodeData = event.subject;
         const [x, y] = toGraphPoint(context.svg, context.currentTransform, event.sourceEvent as MouseEvent | PointerEvent);
         nodeData.fx = x;
         nodeData.fy = y;
@@ -149,11 +153,12 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
         context.positionGraphElements();
     }
 
-    function handleNodeDragEnd(event: D3DragEvent<SVGCircleElement, ForceNodeDatum, ForceNodeDatum>, nodeData: ForceNodeDatum): void {
+    function handleNodeDragEnd(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>): void {
         if (!event.active) {
             context.simulation.alphaTarget(0);
         }
 
+        const nodeData = event.subject;
         if (context.isRepulsionEnabled()) {
             nodeData.fx = undefined;
             nodeData.fy = undefined;
@@ -166,11 +171,17 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
         context.setStatus(`Node ${nodeData.id} moved.`);
     }
 
-    const nodeDrag = d3.drag<SVGCircleElement, ForceNodeDatum>()
-        .filter((event: MouseEvent) => event.button === 0)
-        .on("start", handleNodeDragStart)
-        .on("drag", handleNodeDragged)
-        .on("end", handleNodeDragEnd);
+    function createVertexDrag<TDatum>(subjectAccessor: (event: D3DragEvent<SVGCircleElement, TDatum, ForceNodeDatum>, d: TDatum) => ForceNodeDatum): d3.DragBehavior<SVGCircleElement, TDatum, ForceNodeDatum> {
+        return d3.drag<SVGCircleElement, TDatum, ForceNodeDatum>()
+            .filter((event: MouseEvent) => event.button === 0)
+            .subject(subjectAccessor)
+            .on("start", handleNodeDragStart)
+            .on("drag", handleNodeDragged)
+            .on("end", handleNodeDragEnd);
+    }
+
+    const nodeDrag = createVertexDrag<ForceNodeDatum>((_event, nodeData) => nodeData);
+    const tokenDrag = createVertexDrag<GraphToken>((_event, tokenData) => context.getNodeById(tokenData.nodeId) as ForceNodeDatum);
 
     function handleNodeMouseDown(event: MouseEvent, nodeData: GraphNode): void {
         if (event.button === 1) {
@@ -207,6 +218,7 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
 
     return {
         nodeDrag,
+        tokenDrag,
         handleNodeMouseDown,
         handleBackgroundMouseDown,
         stopEdgeDrag,

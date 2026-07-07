@@ -99,6 +99,7 @@ export function createPFairnessApp({
         backgroundNode: background.node() as SVGRectElement,
         edgePreview,
         simulation,
+        getNodeById: nodeId => graph.nodeById.get(nodeId) ?? null,
         positionGraphElements,
         setStatus,
         refreshGraphAfterMutation,
@@ -262,10 +263,25 @@ export function createPFairnessApp({
         tokenElements.enter().append("circle")
             .attr("class", "token")
             .attr("r", 10)
+            .call(interactions.tokenDrag)
             .on("click", (event: MouseEvent, d: GraphToken) => {
                 event.stopPropagation();
                 selectToken(d.id);
             })
+            .on("mousedown", (event: MouseEvent, d: GraphToken) => {
+                if (event.button === 0) {
+                    return;
+                }
+
+                const nodeData = graph.nodeById.get(d.nodeId);
+
+                if (!nodeData) {
+                    return;
+                }
+
+                interactions.handleNodeMouseDown(event, nodeData);
+            })
+            .on("contextmenu", (event: MouseEvent) => event.preventDefault())
             .on("dblclick", (event: MouseEvent, d: GraphToken) => {
                 event.preventDefault();
                 event.stopPropagation();
