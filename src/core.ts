@@ -282,10 +282,12 @@ export function createPFairnessApp({
                 interactions.handleNodeMouseDown(event, nodeData);
             })
             .on("contextmenu", (event: MouseEvent) => event.preventDefault())
-            .on("dblclick", (event: MouseEvent, d: GraphToken) => {
-                event.preventDefault();
-                event.stopPropagation();
-                deleteTokenAtNode(d.nodeId);
+            .on("click", (event: MouseEvent, d: GraphToken) => {
+                if (event.ctrlKey) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    deleteTokenAtNode(d.nodeId);
+                }
             });
 
         positionTokens();
@@ -498,11 +500,14 @@ export function createPFairnessApp({
 
         nodeSelection
             .call(interactions.nodeDrag)
-            .on("click", (_event: MouseEvent, d: GraphNode) => handleNodeClick(d.id))
-            .on("dblclick", (event: MouseEvent, d: GraphNode) => {
-                event.preventDefault();
-                event.stopPropagation();
-                toggleTokenAtNode(d.id);
+            .on("click", (event: MouseEvent, d: GraphNode) => {
+                if (event.ctrlKey) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toggleTokenAtNode(d.id);
+                } else {
+                    handleNodeClick(d.id);
+                }
             })
             .on("mousedown", (event: MouseEvent, d: GraphNode) => interactions.handleNodeMouseDown(event, d))
             .on("contextmenu", (event: MouseEvent) => event.preventDefault());
