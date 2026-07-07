@@ -294,12 +294,12 @@ export function createPFairnessApp({
         updateTokenClasses();
     }
 
-    function clearSelection(): void {
+    function clearSelection(statusMessage: string = defaultStatusMessage): void {
         selectedTokenId = null;
         legalMoveTargets = new Set<NodeId>();
         updateNodeClasses();
         updateTokenClasses();
-        setStatus(defaultStatusMessage);
+        setStatus(statusMessage);
     }
 
     function selectToken(tokenId: string): void {
@@ -568,7 +568,7 @@ export function createPFairnessApp({
 
     refreshGraphAfterMutation();
     applyLayout(currentLayout);
-    clearSelection();
+    clearSelection("");
 
     return {
         setStatus,

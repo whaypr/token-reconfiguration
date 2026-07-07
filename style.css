@@ -36,10 +36,48 @@ svg:active {
     pointer-events: none;
 }
 
-#instructions {
-    margin-bottom: 10px;
-    font-size: 0.9em;
-    color: #666;
+.instructions-panel {
+    width: min(100%, 1000px);
+    margin-bottom: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+}
+
+.instructions-panel > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 12px 16px;
+    font-weight: 700;
+    color: #1f2937;
+    background: linear-gradient(90deg, rgba(76, 175, 80, 0.12), rgba(255, 193, 7, 0.18));
+}
+
+.instructions-panel > summary::-webkit-details-marker {
+    display: none;
+}
+
+.instructions-panel > summary::after {
+    content: "▾";
+    float: right;
+    transition: transform 0.2s ease;
+}
+
+.instructions-panel[open] > summary::after {
+    transform: rotate(180deg);
+}
+
+.instructions-content {
+    padding: 12px 16px 2px;
+    color: #4b5563;
+    font-size: 0.95em;
+    line-height: 1.55;
+}
+
+.instructions-content p {
+    margin: 0 0 10px;
 }
 
 #controls {
