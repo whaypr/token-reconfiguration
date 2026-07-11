@@ -48,6 +48,19 @@ export interface GraphToken {
     nodeId: NodeId;
 }
 
+export interface SerializedSubgraphNode {
+    id: NodeId;
+    x: number;
+    y: number;
+}
+
+export interface SerializedSubgraph {
+    version: 1;
+    nodes: SerializedSubgraphNode[];
+    links: GraphLinkInput[];
+    tokens: TokenInput[];
+}
+
 export interface PFairnessAppConfig {
     svgSelector: string;
     pInputSelector: string;
@@ -62,5 +75,10 @@ export interface PFairnessApp {
     setStatus(message: string): void;
     setRepulsionEnabled(enabled: boolean): void;
     applyLayout(layout: LayoutMode): void;
+    clearNodeSelection(): void;
+    copySelection(): boolean;
+    pasteSelection(): boolean;
+    saveSelection(): boolean;
+    importSelection(file: File): Promise<boolean>;
     destroy(): void;
 }

@@ -6,8 +6,14 @@ function bootstrap(): void {
     const scenarioSelect = document.getElementById("scenarioSelect") as HTMLSelectElement;
     const layoutSelect = document.getElementById("layoutSelect") as HTMLSelectElement;
     const repulsionToggle = document.getElementById("repulsionToggle") as HTMLInputElement;
+    const copySelectionButton = document.getElementById("copySelectionButton") as HTMLButtonElement;
+    const pasteSelectionButton = document.getElementById("pasteSelectionButton") as HTMLButtonElement;
+    const saveSelectionButton = document.getElementById("saveSelectionButton") as HTMLButtonElement;
+    const importSelectionButton = document.getElementById("importSelectionButton") as HTMLButtonElement;
+    const clearSelectionButton = document.getElementById("clearSelectionButton") as HTMLButtonElement;
+    const selectionImportInput = document.getElementById("selectionImportInput") as HTMLInputElement;
 
-    if (!scenarioSelect || !layoutSelect || !repulsionToggle || scenarios.length === 0) {
+    if (!scenarioSelect || !layoutSelect || !repulsionToggle || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !selectionImportInput || scenarios.length === 0) {
         window.setTimeout(bootstrap, 0);
         return;
     }
@@ -70,6 +76,43 @@ function bootstrap(): void {
         if (currentApp) {
             currentApp.setRepulsionEnabled(repulsionToggle.checked);
         }
+    });
+
+    copySelectionButton.addEventListener("click", () => {
+        currentApp?.copySelection();
+    });
+
+    pasteSelectionButton.addEventListener("click", () => {
+        currentApp?.pasteSelection();
+    });
+
+    saveSelectionButton.addEventListener("click", () => {
+        currentApp?.saveSelection();
+    });
+
+    importSelectionButton.addEventListener("click", () => {
+        selectionImportInput.click();
+    });
+
+    clearSelectionButton.addEventListener("click", () => {
+        if (!currentApp) {
+            return;
+        }
+
+        currentApp.clearNodeSelection();
+        currentApp.setStatus("Selection cleared.");
+    });
+
+    selectionImportInput.addEventListener("change", async () => {
+        const file = selectionImportInput.files?.[0];
+
+        if (!currentApp || !file) {
+            selectionImportInput.value = "";
+            return;
+        }
+
+        await currentApp.importSelection(file);
+        selectionImportInput.value = "";
     });
 
     scenarioSelect.value = "0";

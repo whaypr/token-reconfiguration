@@ -3,7 +3,6 @@
 
 <head>
     <meta charset="UTF-8">
-    <script src="https://d3js.org/d3.v7.min.js"></script>
     <link rel="stylesheet" href="style.css">
     <title>p-Fairness Graph Simulation</title>
 </head>
@@ -13,10 +12,13 @@
         <summary>How to use</summary>
         <div class="instructions-content">
             <p>
-                Middle-click empty space to add a vertex, middle-click a vertex to remove it.
+                Middle-click an empty space to add a vertex, middle-click a vertex to remove it.
                 <br>
-                Right-drag from a vertex to empty space create a connected vertex, right-drag from a vertex to another vertex to create an edge, do it again to remove it.<br>
-                Left-drag a vertex to move it, left-drag the background to pan.
+                Right-drag from a vertex to empty space create a connected vertex, right-drag from a vertex to another vertex to create an edge, do it again to remove it.
+                <br>
+                Right-drag on empty space to select a rectangular area.
+                <br>
+                Left-drag a vertex or selected vertices to move them, Shift+left-drag selected vertices to rotate them, left-drag the background to pan.
             </p>
             <p>
                 Orange nodes can accept a new token.
@@ -24,7 +26,7 @@
                 Tokens on green nodes can move, tokens on red nodes cannot move.
             </p>
             <p>
-                Ctrl+click a vertex to create a token, do it again to remove it.
+                Ctrl+left-click a vertex to create a token, do it again to remove it.
                 <br>
                 Left-click a token to see legal moves, do it again to hide them.
             </p>
@@ -55,9 +57,18 @@
             <strong>p (max tokens in closed neighborhood):</strong>
             <input type="number" id="pValue" value="2" min="0" max="10">
         </label>
+        <div class="selection-actions">
+            <button type="button" id="copySelectionButton">Copy selection</button>
+            <button type="button" id="pasteSelectionButton">Paste selection</button>
+            <button type="button" id="saveSelectionButton">Save selection</button>
+            <button type="button" id="importSelectionButton">Import selection</button>
+            <button type="button" id="clearSelectionButton">Clear selection</button>
+        </div>
     </div>
 
     <div id="status"></div>
+
+    <input id="selectionImportInput" type="file" accept="application/json" hidden>
 
     <svg width="1000" height="800"></svg>
 

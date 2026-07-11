@@ -1,10 +1,10 @@
 import * as d3 from "d3";
 import type { D3DragEvent } from "d3-drag";
-import type { SubjectPosition } from "d3-drag";
 import type { Selection } from "d3-selection";
 import type { Simulation, SimulationNodeDatum } from "d3-force";
 import type { ZoomTransform } from "d3-zoom";
 import type { GraphNode, GraphToken, NodeId } from "./types";
+import { SelectionGestureManager } from "./selection-gestures";
 
 type ForceNodeDatum = GraphNode & SimulationNodeDatum;
 
@@ -20,8 +20,13 @@ interface GraphInteractionContext {
     svg: Selection<SVGSVGElement, unknown, null, undefined>;
     backgroundNode: SVGRectElement;
     edgePreview: Selection<SVGLineElement, unknown, null, undefined>;
+    selectionPreview: Selection<SVGRectElement, unknown, null, undefined>;
     simulation: Simulation<ForceNodeDatum, undefined>;
     getNodeById: (nodeId: NodeId) => ForceNodeDatum | null;
+    getSelectedNodeIds: () => NodeId[];
+    isNodeSelected: (nodeId: NodeId) => boolean;
+    selectNodesInRectangle: (x1: number, y1: number, x2: number, y2: number) => void;
+    clearNodeSelection: () => void;
     positionGraphElements: () => void;
     setStatus: (message: string) => void;
     refreshGraphAfterMutation: (message?: string) => void;
@@ -35,13 +40,11 @@ interface GraphInteractionContext {
 }
 
 export interface GraphInteractionController {
-    nodeDrag: d3.DragBehavior<SVGCircleElement, ForceNodeDatum, ForceNodeDatum | SubjectPosition>;
+    nodeDrag: d3.DragBehavior<SVGCircleElement, ForceNodeDatum, ForceNodeDatum>;
     tokenDrag: d3.DragBehavior<SVGCircleElement, GraphToken, ForceNodeDatum>;
     handleNodeMouseDown(event: MouseEvent, nodeData: GraphNode): void;
     handleBackgroundMouseDown(event: MouseEvent): void;
     stopEdgeDrag(): void;
-    handleWindowMouseMove(event: MouseEvent): void;
-    handleWindowMouseUp(event: MouseEvent): void;
     destroy(): void;
 }
 
@@ -56,6 +59,18 @@ function toGraphPoint(
 
 export function createGraphInteractions(context: GraphInteractionContext): GraphInteractionController {
     let edgeDragState: EdgeDragState = null;
+    const selectionGestures = new SelectionGestureManager({
+        svg: context.svg,
+        selectionPreview: context.selectionPreview,
+        getNodeById: context.getNodeById,
+        getSelectedNodeIds: context.getSelectedNodeIds,
+        isRepulsionEnabled: context.isRepulsionEnabled,
+        positionGraphElements: context.positionGraphElements,
+        selectNodesInRectangle: context.selectNodesInRectangle,
+        clearNodeSelection: context.clearNodeSelection,
+        setStatus: context.setStatus,
+        currentTransform: context.currentTransform,
+    });
 
     function startEdgeDrag(nodeData: ForceNodeDatum): void {
         const [x, y] = [nodeData.x, nodeData.y];
@@ -90,88 +105,54 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
     }
 
     function handleWindowMouseMove(event: MouseEvent): void {
-        if (!edgeDragState) {
-            return;
-        }
+        const pointer = toGraphPoint(context.svg, context.currentTransform, event);
 
-        const [x, y] = toGraphPoint(context.svg, context.currentTransform, event);
-        edgeDragState.x2 = x;
-        edgeDragState.y2 = y;
-        context.edgePreview
-            .attr("x2", x)
-            .attr("y2", y);
+        if (edgeDragState) {
+            edgeDragState.x2 = pointer[0];
+            edgeDragState.y2 = pointer[1];
+            context.edgePreview
+                .attr("x2", pointer[0])
+                .attr("y2", pointer[1]);
+        }
     }
 
-    function handleWindowMouseUp(event: MouseEvent): void {
-        if (!edgeDragState || event.button !== 2) {
-            return;
-        }
+    function handleNodeDragStart(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>, _datum: unknown): void {
+        const nodeData = event.subject;
 
-        event.preventDefault();
-        const [x, y] = toGraphPoint(context.svg, context.currentTransform, event);
-        const sourceNodeId = edgeDragState.source.id;
-        const targetNode = context.getNodeAtPoint(x, y, sourceNodeId);
-
-        if (targetNode) {
-            if (context.removeEdge(sourceNodeId, targetNode.id)) {
-                context.refreshGraphAfterMutation(`Edge between nodes ${sourceNodeId} and ${targetNode.id} removed.`);
-            } else if (context.addEdge(sourceNodeId, targetNode.id)) {
-                context.refreshGraphAfterMutation(`Edge added between nodes ${sourceNodeId} and ${targetNode.id}.`);
-            } else {
-                context.setStatus(`Edge between nodes ${sourceNodeId} and ${targetNode.id} would violate p-fairness, so it was blocked.`);
-            }
-            stopEdgeDrag();
-            return;
-        }
-
-        const newNodeData = context.addNodeAtPoint(x, y);
-        if (context.addEdge(sourceNodeId, newNodeData.id)) {
-            context.refreshGraphAfterMutation(`Node ${newNodeData.id} added and connected to node ${sourceNodeId}.`);
-        }
-
-        stopEdgeDrag();
-    }
-
-    function handleNodeDragStart(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>): void {
         if (!event.active) {
             context.simulation.alphaTarget(0.25).restart();
         }
 
-        const nodeData = event.subject;
-        nodeData.fx = nodeData.x;
-        nodeData.fy = nodeData.y;
-        context.setStatus(`Dragging node ${nodeData.id}.`);
+        if (context.getSelectedNodeIds().length > 1 && context.isNodeSelected(nodeData.id)) {
+            selectionGestures.handleNodeDragStart(event, nodeData);
+            return;
+        }
+
+        selectionGestures.handleNodeDragStart(event, nodeData);
     }
 
-    function handleNodeDragged(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>): void {
+    function handleNodeDragged(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>, _datum: unknown): void {
         const nodeData = event.subject;
-        const [x, y] = toGraphPoint(context.svg, context.currentTransform, event.sourceEvent as MouseEvent | PointerEvent);
-        nodeData.fx = x;
-        nodeData.fy = y;
-        nodeData.anchorX = x;
-        nodeData.anchorY = y;
-        context.positionGraphElements();
+
+        if (selectionGestures.isSelectionDragActive()) {
+            selectionGestures.handleNodeDragged(event, nodeData);
+            return;
+        }
+
+        selectionGestures.handleNodeDragged(event, nodeData);
     }
 
-    function handleNodeDragEnd(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>): void {
+    function handleNodeDragEnd(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>, _datum: unknown): void {
+        const nodeData = event.subject;
+
         if (!event.active) {
             context.simulation.alphaTarget(0);
         }
 
-        const nodeData = event.subject;
-        if (context.isRepulsionEnabled()) {
-            nodeData.fx = undefined;
-            nodeData.fy = undefined;
-        } else {
-            nodeData.anchorX = nodeData.x;
-            nodeData.anchorY = nodeData.y;
-            nodeData.fx = nodeData.x;
-            nodeData.fy = nodeData.y;
-        }
-        context.setStatus(`Node ${nodeData.id} moved.`);
+        selectionGestures.handleNodeDragEnd(event, nodeData);
     }
 
-    function createVertexDrag<TDatum>(subjectAccessor: (event: D3DragEvent<SVGCircleElement, TDatum, ForceNodeDatum>, d: TDatum) => ForceNodeDatum): d3.DragBehavior<SVGCircleElement, TDatum, ForceNodeDatum> {
+    function createDragBehavior<TDatum>(subjectAccessor: (event: D3DragEvent<SVGCircleElement, TDatum, ForceNodeDatum>, datum: TDatum) => ForceNodeDatum): d3.DragBehavior<SVGCircleElement, TDatum, ForceNodeDatum> {
         return d3.drag<SVGCircleElement, TDatum, ForceNodeDatum>()
             .filter((event: MouseEvent) => event.button === 0)
             .subject(subjectAccessor)
@@ -180,8 +161,45 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
             .on("end", handleNodeDragEnd);
     }
 
-    const nodeDrag = createVertexDrag<ForceNodeDatum>((_event, nodeData) => nodeData);
-    const tokenDrag = createVertexDrag<GraphToken>((_event, tokenData) => context.getNodeById(tokenData.nodeId) as ForceNodeDatum);
+    const nodeDrag = createDragBehavior<ForceNodeDatum>((_event, nodeData) => nodeData);
+    const tokenDrag = createDragBehavior<GraphToken>((_event, tokenData) => {
+        const node = context.getNodeById(tokenData.nodeId);
+        if (!node) {
+            throw new Error(`Token ${tokenData.id} points to a missing node.`);
+        }
+
+        return node;
+    });
+
+    function handleWindowMouseUp(event: MouseEvent): void {
+        if (edgeDragState && event.button === 2) {
+            event.preventDefault();
+            const [x, y] = toGraphPoint(context.svg, context.currentTransform, event);
+            const sourceNodeId = edgeDragState.source.id;
+            const targetNode = context.getNodeAtPoint(x, y, sourceNodeId);
+
+            if (targetNode) {
+                if (context.removeEdge(sourceNodeId, targetNode.id)) {
+                    context.refreshGraphAfterMutation(`Edge between nodes ${sourceNodeId} and ${targetNode.id} removed.`);
+                } else if (context.addEdge(sourceNodeId, targetNode.id)) {
+                    context.refreshGraphAfterMutation(`Edge added between nodes ${sourceNodeId} and ${targetNode.id}.`);
+                } else {
+                    context.setStatus(`Edge between nodes ${sourceNodeId} and ${targetNode.id} would violate p-fairness, so it was blocked.`);
+                }
+                stopEdgeDrag();
+                return;
+            }
+
+            const newNodeData = context.addNodeAtPoint(x, y);
+            if (context.addEdge(sourceNodeId, newNodeData.id)) {
+                context.refreshGraphAfterMutation(`Node ${newNodeData.id} added and connected to node ${sourceNodeId}.`);
+            }
+
+            stopEdgeDrag();
+            return;
+        }
+
+    }
 
     function handleNodeMouseDown(event: MouseEvent, nodeData: GraphNode): void {
         if (event.button === 1) {
@@ -201,19 +219,26 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
     }
 
     function handleBackgroundMouseDown(event: MouseEvent): void {
-        if (event.button !== 1 || event.target !== context.backgroundNode) {
+        if (event.button === 1) {
+            event.preventDefault();
+            event.stopPropagation();
+            const [x, y] = toGraphPoint(context.svg, context.currentTransform, event);
+            const nodeData = context.addNodeAtPoint(x, y);
+            context.refreshGraphAfterMutation(`Node ${nodeData.id} added.`);
             return;
         }
 
-        event.preventDefault();
-        event.stopPropagation();
-        const [x, y] = toGraphPoint(context.svg, context.currentTransform, event);
-        const nodeData = context.addNodeAtPoint(x, y);
-        context.refreshGraphAfterMutation(`Node ${nodeData.id} added.`);
+        if (event.button === 2) {
+            event.preventDefault();
+            event.stopPropagation();
+            const [x, y] = toGraphPoint(context.svg, context.currentTransform, event);
+            selectionGestures.startSelectionBox(x, y);
+        }
     }
 
     function destroy(): void {
         stopEdgeDrag();
+        selectionGestures.destroy();
     }
 
     return {
@@ -222,8 +247,6 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
         handleNodeMouseDown,
         handleBackgroundMouseDown,
         stopEdgeDrag,
-        handleWindowMouseMove,
-        handleWindowMouseUp,
         destroy,
     };
 }

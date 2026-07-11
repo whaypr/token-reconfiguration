@@ -104,6 +104,26 @@ svg:active {
     padding: 4px 8px;
 }
 
+.selection-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.selection-actions button {
+    font: inherit;
+    padding: 6px 10px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 999px;
+    background: #fff;
+    color: #1f2937;
+    cursor: pointer;
+}
+
+.selection-actions button:hover {
+    background: #f3f4f6;
+}
+
 #status {
     margin-bottom: 14px;
     background: white;
@@ -153,9 +173,21 @@ svg:active {
     stroke-width: 4px;
 }
 
+.node.region-selected {
+    stroke: #2563eb;
+    stroke-width: 4px;
+}
+
+.selection-preview {
+    fill: rgba(37, 99, 235, 0.12);
+    stroke: rgba(37, 99, 235, 0.9);
+    stroke-width: 1.5px;
+    stroke-dasharray: 8 4;
+    pointer-events: none;
+}
+
 .token {
     fill: #FFC107;
-    /* Yellow tokens */
     stroke: #333;
     stroke-width: 2px;
     cursor: pointer;

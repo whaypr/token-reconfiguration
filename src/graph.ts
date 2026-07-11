@@ -95,6 +95,12 @@ export class Graph {
         this.nodeById = new Map(this.nodes.map(node => [node.id, node]));
     }
 
+    allocateNodeId(): number {
+        const nextNodeId = this.nextNodeId;
+        this.nextNodeId += 1;
+        return nextNodeId;
+    }
+
     setP(nextP: number): void {
         this.p = nextP;
     }
@@ -125,7 +131,7 @@ export class Graph {
 
     addNodeAtPoint(x: number, y: number): GraphNode {
         const nodeData: GraphNode = {
-            id: this.nextNodeId,
+            id: this.allocateNodeId(),
             x,
             y,
             vx: 0,
@@ -136,7 +142,6 @@ export class Graph {
             anchorY: y,
         };
 
-        this.nextNodeId += 1;
         this.nodes.push(nodeData);
         this.refreshNodeIndex();
         return nodeData;

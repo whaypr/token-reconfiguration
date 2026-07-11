@@ -14,6 +14,7 @@ import type {
 import { applyGraphLayout } from "./layouts";
 import { createGraph } from "./graph-factory";
 import { createGraphInteractions } from "./graph-interactions";
+import { SelectionManager } from "./selection";
 
 type ForceNodeDatum = GraphNode & SimulationNodeDatum;
 
@@ -51,10 +52,10 @@ export function createPFairnessApp({
     const graphLinks: ForceLinkDatum[] = graph.links as ForceLinkDatum[];
     let selectedTokenId: string | null = null;
     let legalMoveTargets = new Set<NodeId>();
-    let p = initialP;
     let currentLayout: LayoutMode = "circular";
     let repulsionEnabled = false;
     let currentTransform: ZoomTransform = d3.zoomIdentity;
+    let p = initialP;
 
     const defaultStatusMessage = "Select a token to see legal moves. Middle-click empty space to add a node, middle-click a node to remove it, right-drag from a vertex to create an edge, and left-drag the background to pan.";
 
@@ -71,6 +72,21 @@ export function createPFairnessApp({
     const edgePreview = interactionLayer.append("line")
         .attr("class", "edge-preview")
         .style("display", "none");
+    const selectionPreview = interactionLayer.append("rect")
+        .attr("class", "selection-preview")
+        .style("display", "none");
+
+    function setStatus(message: string): void {
+        statusElement.textContent = message;
+    }
+
+    const selection = new SelectionManager(
+        graph,
+        () => graphNodes,
+        setStatus,
+        () => updateNodeClasses(),
+        () => updateTokenClasses(),
+    );
 
     const linkForce = d3.forceLink<ForceNodeDatum, ForceLinkDatum>(graphLinks)
         .id((d: ForceNodeDatum) => d.id)
@@ -98,8 +114,16 @@ export function createPFairnessApp({
         svg,
         backgroundNode: background.node() as SVGRectElement,
         edgePreview,
+        selectionPreview,
         simulation,
-        getNodeById: nodeId => graph.nodeById.get(nodeId) ?? null,
+        getNodeById,
+        getSelectedNodeIds: () => selection.getSelectedNodeIds(),
+        isNodeSelected: (nodeId: NodeId) => selection.isNodeSelected(nodeId),
+        selectNodesInRectangle: (x1, y1, x2, y2) => {
+            clearTokenMoveSelection();
+            selection.selectNodesInRectangle(x1, y1, x2, y2);
+        },
+        clearNodeSelection: () => selection.clearNodeSelection(),
         positionGraphElements,
         setStatus,
         refreshGraphAfterMutation,
@@ -155,7 +179,7 @@ export function createPFairnessApp({
 
         syncNodePinning();
         setSimulationForces();
-        refreshSelectionState();
+        refreshTokenMoveSelectionState();
         updateNodeClasses();
         updateTokenClasses();
         positionGraphElements();
@@ -177,8 +201,163 @@ export function createPFairnessApp({
         simulation.alpha(0.6).restart();
     }
 
-    function refreshSelectionState(): void {
+    function getNodeById(nodeId: NodeId): ForceNodeDatum | null {
+        return graph.nodeById.get(nodeId) as ForceNodeDatum | null || null;
+    }
+
+    function getNodeAtPoint(x: number, y: number, ignoredNodeId: NodeId | null = null): GraphNode | null {
+        const matchRadius = 22;
+        let closestNode: GraphNode | null = null;
+        let closestDistance = Infinity;
+
+        graphNodes.forEach(nodeData => {
+            if (nodeData.id === ignoredNodeId || !Number.isFinite(nodeData.x) || !Number.isFinite(nodeData.y)) {
+                return;
+            }
+
+            const dx = nodeData.x - x;
+            const dy = nodeData.y - y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestNode = nodeData;
+            }
+        });
+
+        return closestDistance <= matchRadius ? closestNode : null;
+    }
+
+    function addNodeAtPoint(x: number, y: number): GraphNode {
+        const nodeData = graph.addNodeAtPoint(x, y);
+        if (repulsionEnabled) {
+            nodeData.fx = undefined;
+            nodeData.fy = undefined;
+        }
+
+        return nodeData;
+    }
+
+    function refreshTokenMoveSelectionState(): void {
         legalMoveTargets = selectedTokenId ? new Set(graph.getLegalMoveTargets(selectedTokenId)) : new Set<NodeId>();
+    }
+
+    function isTokenFrozen(tokenId: string): boolean {
+        return graph.getLegalMoveTargets(tokenId).length === 0;
+    }
+
+    function clearTokenMoveSelection(statusMessage: string = defaultStatusMessage): void {
+        selectedTokenId = null;
+        legalMoveTargets = new Set<NodeId>();
+        updateNodeClasses();
+        updateTokenClasses();
+        setStatus(statusMessage);
+    }
+
+    function selectToken(tokenId: string): void {
+        if (selectedTokenId === tokenId) {
+            clearTokenMoveSelection();
+            return;
+        }
+
+        selectedTokenId = tokenId;
+        legalMoveTargets = new Set(graph.getLegalMoveTargets(tokenId));
+        selection.clearNodeSelection();
+        updateNodeClasses();
+        updateTokenClasses();
+
+        if (legalMoveTargets.size === 0) {
+            setStatus(`Token ${tokenId} is frozen and cannot move.`);
+        } else {
+            setStatus(`Token ${tokenId} selected. Click one of the highlighted neighbors.`);
+        }
+    }
+
+    function moveToken(tokenId: string, targetNodeId: NodeId): boolean {
+        if (!graph.canMoveToken(tokenId, targetNodeId)) {
+            setStatus("That move would violate the p-fairness rule, so it was blocked.");
+            return false;
+        }
+
+        const token = graph.tokens.find(item => item.id === tokenId);
+        if (!token) {
+            clearTokenMoveSelection();
+            return false;
+        }
+
+        token.nodeId = targetNodeId;
+        refreshTokenMoveSelectionState();
+        renderTokens();
+        updateNodeClasses();
+
+        if (legalMoveTargets.size === 0) {
+            setStatus(`Token ${tokenId} moved to node ${targetNodeId}. It is now frozen.`);
+        } else {
+            setStatus(`Token ${tokenId} moved to node ${targetNodeId}.`);
+        }
+
+        return true;
+    }
+
+    function addTokenAtNode(nodeId: NodeId): boolean {
+        if (!graph.addTokenAtNode(nodeId, p)) {
+            return false;
+        }
+
+        renderTokens();
+        updateNodeClasses();
+        setStatus(`Token added at node ${nodeId}.`);
+        return true;
+    }
+
+    function deleteTokenAtNode(nodeId: NodeId): boolean {
+        const token = graph.getTokenAtNode(nodeId);
+        if (!graph.deleteTokenAtNode(nodeId)) {
+            return false;
+        }
+
+        if (!token) {
+            return false;
+        }
+
+        if (selectedTokenId === token.id) {
+            clearTokenMoveSelection();
+        } else {
+            updateNodeClasses();
+            updateTokenClasses();
+        }
+
+        renderTokens();
+        setStatus(`Token removed from node ${nodeId}.`);
+        return true;
+    }
+
+    function toggleTokenAtNode(nodeId: NodeId): void {
+        if (graph.getTokenAtNode(nodeId)) {
+            deleteTokenAtNode(nodeId);
+            return;
+        }
+
+        addTokenAtNode(nodeId);
+    }
+
+    function handleNodeClick(nodeId: NodeId): void {
+        if (!selectedTokenId) {
+            return;
+        }
+
+        if (legalMoveTargets.has(nodeId)) {
+            moveToken(selectedTokenId, nodeId);
+            return;
+        }
+
+        const selectedToken = graph.tokens.find(token => token.id === selectedTokenId);
+        if (selectedToken && selectedToken.nodeId === nodeId) {
+            clearTokenMoveSelection();
+            return;
+        }
+
+        setStatus("Click one of the highlighted neighbors to move the selected token.");
     }
 
     function positionTokens(): void {
@@ -207,19 +386,15 @@ export function createPFairnessApp({
         positionTokens();
     }
 
-    function setStatus(message: string): void {
-        statusElement.textContent = message;
-    }
-
-    function isTokenFrozen(tokenId: string): boolean {
-        return graph.getLegalMoveTargets(tokenId).length === 0;
-    }
-
     function updateNodeClasses(): void {
         nodeLayer.selectAll<SVGCircleElement, GraphNode>(".node")
             .attr("class", d => {
                 const token = graph.getTokenAtNode(d.id);
                 const classes = ["node"];
+
+                if (selection.isNodeSelected(d.id)) {
+                    classes.push("region-selected");
+                }
 
                 if (!token) {
                     classes.push("empty");
@@ -287,157 +462,15 @@ export function createPFairnessApp({
                     event.preventDefault();
                     event.stopPropagation();
                     deleteTokenAtNode(d.nodeId);
+                    return;
                 }
+
+                event.stopPropagation();
+                selectToken(d.id);
             });
 
         positionTokens();
         updateTokenClasses();
-    }
-
-    function clearSelection(statusMessage: string = defaultStatusMessage): void {
-        selectedTokenId = null;
-        legalMoveTargets = new Set<NodeId>();
-        updateNodeClasses();
-        updateTokenClasses();
-        setStatus(statusMessage);
-    }
-
-    function selectToken(tokenId: string): void {
-        if (selectedTokenId === tokenId) {
-            clearSelection();
-            return;
-        }
-
-        selectedTokenId = tokenId;
-        legalMoveTargets = new Set(graph.getLegalMoveTargets(tokenId));
-        updateNodeClasses();
-        updateTokenClasses();
-
-        if (legalMoveTargets.size === 0) {
-            setStatus(`Token ${tokenId} is frozen and cannot move.`);
-        } else {
-            setStatus(`Token ${tokenId} selected. Click one of the highlighted neighbors.`);
-        }
-    }
-
-    function moveToken(tokenId: string, targetNodeId: NodeId): boolean {
-        if (!graph.canMoveToken(tokenId, targetNodeId)) {
-            setStatus("That move would violate the p-fairness rule, so it was blocked.");
-            return false;
-        }
-
-        const token = graph.tokens.find(item => item.id === tokenId);
-        if (!token) {
-            clearSelection();
-            return false;
-        }
-
-        token.nodeId = targetNodeId;
-        legalMoveTargets = selectedTokenId ? new Set(graph.getLegalMoveTargets(selectedTokenId)) : new Set<NodeId>();
-        renderTokens();
-        updateNodeClasses();
-
-        if (legalMoveTargets.size === 0) {
-            setStatus(`Token ${tokenId} moved to node ${targetNodeId}. It is now frozen.`);
-        } else {
-            setStatus(`Token ${tokenId} moved to node ${targetNodeId}.`);
-        }
-
-        return true;
-    }
-
-    function addTokenAtNode(nodeId: NodeId): boolean {
-        if (!graph.addTokenAtNode(nodeId, p)) {
-            return false;
-        }
-
-        renderTokens();
-        updateNodeClasses();
-        setStatus(`Token added at node ${nodeId}.`);
-        return true;
-    }
-
-    function deleteTokenAtNode(nodeId: NodeId): boolean {
-        const token = graph.getTokenAtNode(nodeId);
-        if (!graph.deleteTokenAtNode(nodeId)) {
-            return false;
-        }
-
-        if (!token) {
-            return false;
-        }
-
-        if (selectedTokenId === token.id) {
-            clearSelection();
-        } else {
-            updateNodeClasses();
-            updateTokenClasses();
-        }
-
-        renderTokens();
-        setStatus(`Token removed from node ${nodeId}.`);
-        return true;
-    }
-
-    function toggleTokenAtNode(nodeId: NodeId): void {
-        if (graph.getTokenAtNode(nodeId)) {
-            deleteTokenAtNode(nodeId);
-            return;
-        }
-
-        addTokenAtNode(nodeId);
-    }
-
-    function handleNodeClick(nodeId: NodeId): void {
-        if (!selectedTokenId) {
-            return;
-        }
-
-        if (legalMoveTargets.has(nodeId)) {
-            moveToken(selectedTokenId, nodeId);
-            return;
-        }
-
-        const selectedToken = graph.tokens.find(token => token.id === selectedTokenId);
-        if (selectedToken && selectedToken.nodeId === nodeId) {
-            clearSelection();
-            return;
-        }
-
-        setStatus("Click one of the highlighted neighbors to move the selected token.");
-    }
-
-    function getNodeAtPoint(x: number, y: number, ignoredNodeId: NodeId | null = null): GraphNode | null {
-        const matchRadius = 22;
-        let closestNode: GraphNode | null = null;
-        let closestDistance = Infinity;
-
-        graphNodes.forEach(nodeData => {
-            if (nodeData.id === ignoredNodeId || !Number.isFinite(nodeData.x) || !Number.isFinite(nodeData.y)) {
-                return;
-            }
-
-            const dx = nodeData.x - x;
-            const dy = nodeData.y - y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            if (distance < closestDistance) {
-                closestDistance = distance;
-                closestNode = nodeData;
-            }
-        });
-
-        return closestDistance <= matchRadius ? closestNode : null;
-    }
-
-    function addNodeAtPoint(x: number, y: number): GraphNode {
-        const nodeData = graph.addNodeAtPoint(x, y);
-        if (repulsionEnabled) {
-            nodeData.fx = undefined;
-            nodeData.fy = undefined;
-        }
-
-        return nodeData;
     }
 
     function addEdge(sourceNodeId: NodeId, targetNodeId: NodeId): boolean {
@@ -445,7 +478,7 @@ export function createPFairnessApp({
             return false;
         }
 
-        refreshSelectionState();
+        refreshTokenMoveSelectionState();
         return true;
     }
 
@@ -456,7 +489,7 @@ export function createPFairnessApp({
             return false;
         }
 
-        refreshSelectionState();
+        refreshTokenMoveSelectionState();
         return true;
     }
 
@@ -467,15 +500,15 @@ export function createPFairnessApp({
             return false;
         }
 
-        if (tokenOnNode) {
-            if (selectedTokenId === tokenOnNode.id) {
-                selectedTokenId = null;
-                legalMoveTargets = new Set<NodeId>();
-            }
+        if (tokenOnNode && selectedTokenId === tokenOnNode.id) {
+            selectedTokenId = null;
+            legalMoveTargets = new Set<NodeId>();
         }
 
         interactions.stopEdgeDrag();
-        refreshSelectionState();
+        selection.clearNodeSelection();
+        refreshTokenMoveSelectionState();
+        updateNodeClasses();
         return true;
     }
 
@@ -524,7 +557,7 @@ export function createPFairnessApp({
         syncSimulation();
         renderGraph();
         renderTokens();
-        refreshSelectionState();
+        refreshTokenMoveSelectionState();
         updateNodeClasses();
         updateTokenClasses();
         positionGraphElements();
@@ -548,10 +581,42 @@ export function createPFairnessApp({
 
         p = nextP;
         graph.setP(nextP);
-        refreshSelectionState();
+        refreshTokenMoveSelectionState();
         updateNodeClasses();
         updateTokenClasses();
         setStatus(`p updated to ${p}.`);
+    }
+
+    function copySelection(): boolean {
+        return selection.copySelection();
+    }
+
+    function pasteSelection(): boolean {
+        const pastedNodeIds = selection.pasteSelection();
+
+        if (!pastedNodeIds) {
+            return false;
+        }
+
+        selectedTokenId = null;
+        refreshGraphAfterMutation(`${pastedNodeIds.size} vertices pasted.`);
+        return true;
+    }
+
+    function saveSelection(): boolean {
+        return selection.saveSelection();
+    }
+
+    async function importSelection(file: File): Promise<boolean> {
+        const pastedNodeIds = await selection.importSelection(file);
+
+        if (!pastedNodeIds) {
+            return false;
+        }
+
+        selectedTokenId = null;
+        refreshGraphAfterMutation(`Imported ${pastedNodeIds.size} vertices.`);
+        return true;
     }
 
     function handlePChange(event: Event): void {
@@ -568,12 +633,19 @@ export function createPFairnessApp({
 
     refreshGraphAfterMutation();
     applyLayout(currentLayout);
-    clearSelection();
+    clearTokenMoveSelection();
 
     return {
         setStatus,
         setRepulsionEnabled,
         applyLayout,
+        clearNodeSelection() {
+            selection.clearNodeSelection();
+        },
+        copySelection,
+        pasteSelection,
+        saveSelection,
+        importSelection,
         destroy() {
             simulation.stop();
             pInput.removeEventListener("change", handlePChange);
