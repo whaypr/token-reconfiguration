@@ -619,6 +619,17 @@ export function createPFairnessApp({
         return true;
     }
 
+    function deleteSelection(): boolean {
+        const deleted = selection.deleteSelection();
+
+        if (deleted) {
+            selectedTokenId = null;
+            refreshGraphAfterMutation();
+        }
+
+        return deleted;
+    }
+
     function handlePChange(event: Event): void {
         const target = event.target as HTMLInputElement | null;
         applyPValue(Number.parseInt(target?.value ?? "", 10));
@@ -645,6 +656,7 @@ export function createPFairnessApp({
         copySelection,
         pasteSelection,
         saveSelection,
+        deleteSelection,
         importSelection,
         destroy() {
             simulation.stop();

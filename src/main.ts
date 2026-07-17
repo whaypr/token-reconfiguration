@@ -11,9 +11,10 @@ function bootstrap(): void {
     const saveSelectionButton = document.getElementById("saveSelectionButton") as HTMLButtonElement;
     const importSelectionButton = document.getElementById("importSelectionButton") as HTMLButtonElement;
     const clearSelectionButton = document.getElementById("clearSelectionButton") as HTMLButtonElement;
+    const deleteSelectionButton = document.getElementById("deleteSelectionButton") as HTMLButtonElement;
     const selectionImportInput = document.getElementById("selectionImportInput") as HTMLInputElement;
 
-    if (!scenarioSelect || !layoutSelect || !repulsionToggle || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !selectionImportInput || scenarios.length === 0) {
+    if (!scenarioSelect || !layoutSelect || !repulsionToggle || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0) {
         window.setTimeout(bootstrap, 0);
         return;
     }
@@ -92,6 +93,10 @@ function bootstrap(): void {
 
     importSelectionButton.addEventListener("click", () => {
         selectionImportInput.click();
+    });
+
+    deleteSelectionButton.addEventListener("click", () => {
+        currentApp?.deleteSelection();
     });
 
     clearSelectionButton.addEventListener("click", () => {

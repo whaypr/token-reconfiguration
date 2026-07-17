@@ -23,6 +23,34 @@ export class SelectionManager {
         return this.selectedNodeIds.has(nodeId);
     }
 
+    replaceSelectedNodeIds(nodeIds: Set<NodeId>): void {
+        this.selectedNodeIds = new Set(nodeIds);
+        this.updateNodeClasses();
+        this.updateTokenClasses();
+    }
+
+    selectNodesInRectangle(x1: number, y1: number, x2: number, y2: number): void {
+        const minX = Math.min(x1, x2);
+        const maxX = Math.max(x1, x2);
+        const minY = Math.min(y1, y2);
+        const maxY = Math.max(y1, y2);
+
+        this.selectedNodeIds = new Set(
+            this.getNodes()
+                .filter((nodeData: GraphNode) => nodeData.x >= minX && nodeData.x <= maxX && nodeData.y >= minY && nodeData.y <= maxY)
+                .map((nodeData: GraphNode) => nodeData.id),
+        );
+
+        if (this.selectedNodeIds.size === 0) {
+            this.setStatus("No vertices were inside the selection.");
+        } else {
+            this.setStatus(`${this.selectedNodeIds.size} vertices selected.`);
+        }
+
+        this.updateNodeClasses();
+        this.updateTokenClasses();
+    }
+
     clearNodeSelection(statusMessage: string | null = null): void {
         this.selectedNodeIds = new Set<NodeId>();
         this.updateNodeClasses();
@@ -30,12 +58,6 @@ export class SelectionManager {
         if (statusMessage !== null) {
             this.setStatus(statusMessage);
         }
-    }
-
-    replaceSelectedNodeIds(nodeIds: Set<NodeId>): void {
-        this.selectedNodeIds = new Set(nodeIds);
-        this.updateNodeClasses();
-        this.updateTokenClasses();
     }
 
     copySelection(): boolean {
@@ -102,31 +124,25 @@ export class SelectionManager {
         }
     }
 
+    deleteSelection(): boolean {
+        if (this.selectedNodeIds.size === 0) {
+            this.setStatus("Select at least one vertex before deleting.");
+            return false;
+        }
+
+        const deletedCount = this.selectedNodeIds.size;
+
+        for (const nodeId of this.selectedNodeIds) {
+            this.graph.removeNode(nodeId);
+        }
+
+        this.clearNodeSelection(`Deleted ${deletedCount} vertices.`);
+        return true;
+    }
+
     private applyPastedSelection(pastedNodeIds: Set<NodeId>): void {
         this.selectedNodeIds = new Set(pastedNodeIds);
         this.clipboardPasteCount += 1;
-        this.updateNodeClasses();
-        this.updateTokenClasses();
-    }
-
-    selectNodesInRectangle(x1: number, y1: number, x2: number, y2: number): void {
-        const minX = Math.min(x1, x2);
-        const maxX = Math.max(x1, x2);
-        const minY = Math.min(y1, y2);
-        const maxY = Math.max(y1, y2);
-
-        this.selectedNodeIds = new Set(
-            this.getNodes()
-                .filter((nodeData: GraphNode) => nodeData.x >= minX && nodeData.x <= maxX && nodeData.y >= minY && nodeData.y <= maxY)
-                .map((nodeData: GraphNode) => nodeData.id),
-        );
-
-        if (this.selectedNodeIds.size === 0) {
-            this.setStatus("No vertices were inside the selection.");
-        } else {
-            this.setStatus(`${this.selectedNodeIds.size} vertices selected.`);
-        }
-
         this.updateNodeClasses();
         this.updateTokenClasses();
     }

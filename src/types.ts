@@ -79,6 +79,7 @@ export interface PFairnessApp {
     copySelection(): boolean;
     pasteSelection(): boolean;
     saveSelection(): boolean;
+    deleteSelection(): boolean;
     importSelection(file: File): Promise<boolean>;
     destroy(): void;
 }
