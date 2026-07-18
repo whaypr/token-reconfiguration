@@ -2,11 +2,11 @@ import type { Scenario } from "./types";
 
 export const scenarios: Scenario[] = [
     {
-        id: "one_node",
-        name: "One node",
-        description: "Just a node.",
+        id: "empty",
+        name: "Empty plane",
+        description: "Just an empty plane.",
         initialP: 2,
-        nodes: [1],
+        nodes: [],
         links: [],
         tokens: [],
     },
