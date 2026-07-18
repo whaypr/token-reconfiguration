@@ -124,6 +124,12 @@ svg:active {
     background: #f3f4f6;
 }
 
+.selection-actions .separator {
+    width: 2px;
+    background: rgba(0, 0, 0, 0.2);
+    margin: 0 6px;
+}
+
 #status {
     margin-bottom: 14px;
     background: white;
