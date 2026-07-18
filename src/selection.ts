@@ -104,7 +104,7 @@ export class SelectionManager {
         return true;
     }
 
-    async importSelection(file: File): Promise<Set<NodeId> | null> {
+    async importSelection(file: File, targetCenter: { x: number; y: number } | null = null): Promise<Set<NodeId> | null> {
         try {
             const text = await file.text();
             const data = JSON.parse(text) as SerializedSubgraph;
@@ -114,7 +114,24 @@ export class SelectionManager {
                 return null;
             }
 
-            const pastedNodeIds = pasteSerializedSubgraph(this.graph, data, 40 * (this.clipboardPasteCount + 1), 40 * (this.clipboardPasteCount + 1));
+            let offsetX = 40 * (this.clipboardPasteCount + 1);
+            let offsetY = 40 * (this.clipboardPasteCount + 1);
+
+            if (targetCenter !== null && data.nodes.length > 0) {
+                const xs = data.nodes.map(node => node.x);
+                const ys = data.nodes.map(node => node.y);
+                const minX = Math.min(...xs);
+                const maxX = Math.max(...xs);
+                const minY = Math.min(...ys);
+                const maxY = Math.max(...ys);
+                const centerX = (minX + maxX) / 2;
+                const centerY = (minY + maxY) / 2;
+
+                offsetX = targetCenter.x - centerX;
+                offsetY = targetCenter.y - centerY;
+            }
+
+            const pastedNodeIds = pasteSerializedSubgraph(this.graph, data, offsetX, offsetY);
             this.applyPastedSelection(pastedNodeIds);
             this.setStatus(`Imported ${data.nodes.length} vertices.`);
             return pastedNodeIds;

@@ -607,8 +607,15 @@ export function createPFairnessApp({
         return selection.saveSelection();
     }
 
+    function getViewportCenter(): { x: number; y: number } {
+        return {
+            x: currentTransform.invertX(width / 2),
+            y: currentTransform.invertY(height / 2),
+        };
+    }
+
     async function importSelection(file: File): Promise<boolean> {
-        const pastedNodeIds = await selection.importSelection(file);
+        const pastedNodeIds = await selection.importSelection(file, getViewportCenter());
 
         if (!pastedNodeIds) {
             return false;
