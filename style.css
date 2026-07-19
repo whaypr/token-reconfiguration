@@ -37,7 +37,7 @@ svg:active {
 }
 
 .instructions-panel {
-    width: min(100%, 1000px);
+    width: min(100%, 1200px);
     margin-bottom: 12px;
     border-radius: 14px;
     border: 1px solid rgba(0, 0, 0, 0.08);

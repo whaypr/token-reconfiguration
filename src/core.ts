@@ -103,7 +103,7 @@ export function createPFairnessApp({
         .force("center", null);
 
     const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.5, 3])
+        .scaleExtent([0.15, 3])
         .filter((event: MouseEvent | WheelEvent) => event.type === "wheel" || (event.type === "mousedown" && event.button === 0) || event.type === "dblclick")
         .on("zoom", (event: D3ZoomEvent<SVGSVGElement, unknown>) => {
             currentTransform = event.transform;
