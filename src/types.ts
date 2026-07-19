@@ -76,6 +76,7 @@ export interface PFairnessApp {
     setRepulsionEnabled(enabled: boolean): void;
     applyLayout(layout: LayoutMode): void;
     clearNodeSelection(): void;
+    undo(): boolean;
     copySelection(): boolean;
     pasteSelection(): boolean;
     saveSelection(): boolean;

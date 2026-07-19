@@ -2,6 +2,12 @@ import type { Graph } from "./graph";
 import type { GraphNode, NodeId, SerializedSubgraph } from "./types";
 import { pasteSerializedSubgraph, serializeSelectedSubgraph } from "./subgraph";
 
+export interface SelectionStateSnapshot {
+    selectedNodeIds: NodeId[];
+    clipboardSelection: SerializedSubgraph | null;
+    clipboardPasteCount: number;
+}
+
 export class SelectionManager {
     private selectedNodeIds = new Set<NodeId>();
     private clipboardSelection: SerializedSubgraph | null = null;
@@ -13,7 +19,24 @@ export class SelectionManager {
         private setStatus: (message: string) => void,
         private updateNodeClasses: () => void,
         private updateTokenClasses: () => void,
+        private recordUndoState: () => void,
     ) {}
+
+    createSnapshot(): SelectionStateSnapshot {
+        return {
+            selectedNodeIds: [...this.selectedNodeIds],
+            clipboardSelection: this.cloneSelection(this.clipboardSelection),
+            clipboardPasteCount: this.clipboardPasteCount,
+        };
+    }
+
+    restoreSnapshot(snapshot: SelectionStateSnapshot): void {
+        this.selectedNodeIds = new Set(snapshot.selectedNodeIds);
+        this.clipboardSelection = this.cloneSelection(snapshot.clipboardSelection);
+        this.clipboardPasteCount = snapshot.clipboardPasteCount;
+        this.updateNodeClasses();
+        this.updateTokenClasses();
+    }
 
     getSelectedNodeIds(): NodeId[] {
         return [...this.selectedNodeIds];
@@ -79,6 +102,7 @@ export class SelectionManager {
             return null;
         }
 
+        this.recordUndoState();
         const offset = 40 * (this.clipboardPasteCount + 1);
         const pastedNodeIds = pasteSerializedSubgraph(this.graph, this.clipboardSelection, offset, offset);
         this.applyPastedSelection(pastedNodeIds);
@@ -147,6 +171,7 @@ export class SelectionManager {
             return false;
         }
 
+        this.recordUndoState();
         const deletedCount = this.selectedNodeIds.size;
 
         for (const nodeId of this.selectedNodeIds) {
@@ -162,5 +187,18 @@ export class SelectionManager {
         this.clipboardPasteCount += 1;
         this.updateNodeClasses();
         this.updateTokenClasses();
+    }
+
+    private cloneSelection(selectionData: SerializedSubgraph | null): SerializedSubgraph | null {
+        if (!selectionData) {
+            return null;
+        }
+
+        return {
+            version: selectionData.version,
+            nodes: selectionData.nodes.map(node => ({ ...node })),
+            links: selectionData.links.map(link => ({ ...link })),
+            tokens: selectionData.tokens.map(token => ({ ...token })),
+        };
     }
 }

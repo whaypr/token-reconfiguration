@@ -15,12 +15,37 @@ import { applyGraphLayout } from "./layouts";
 import { createGraph } from "./graph-factory";
 import { createGraphInteractions } from "./graph-interactions";
 import { SelectionManager } from "./selection";
+import type { SelectionStateSnapshot } from "./selection";
 
 type ForceNodeDatum = GraphNode & SimulationNodeDatum;
 
 type ForceLinkDatum = SimulationLinkDatum<ForceNodeDatum> & {
     source: NodeId | ForceNodeDatum;
     target: NodeId | ForceNodeDatum;
+};
+
+type GraphNodeSnapshot = {
+    id: NodeId;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    fx?: number;
+    fy?: number;
+    anchorX: number;
+    anchorY: number;
+};
+
+type AppUndoSnapshot = {
+    graph: {
+        nodes: GraphNodeSnapshot[];
+        links: Array<{ source: NodeId; target: NodeId }>;
+        tokens: Array<{ id: string; nodeId: NodeId }>;
+        p: number;
+        nextNodeId: number;
+    };
+    selectedTokenId: string | null;
+    selection: SelectionStateSnapshot;
 };
 
 type SvgSelection = Selection<SVGSVGElement, unknown, null, undefined>;
@@ -56,6 +81,8 @@ export function createPFairnessApp({
     let repulsionEnabled = false;
     let currentTransform: ZoomTransform = d3.zoomIdentity;
     let p = initialP;
+    const undoStack: AppUndoSnapshot[] = [];
+    let undoGroupDepth = 0;
 
     const defaultStatusMessage = "Select a token to see legal moves. Middle-click empty space to add a node, middle-click a node to remove it, right-drag from a vertex to create an edge, and left-drag the background to pan.";
 
@@ -86,6 +113,7 @@ export function createPFairnessApp({
         setStatus,
         () => updateNodeClasses(),
         () => updateTokenClasses(),
+        recordUndoState,
     );
 
     const linkForce = d3.forceLink<ForceNodeDatum, ForceLinkDatum>(graphLinks)
@@ -124,6 +152,9 @@ export function createPFairnessApp({
             selection.selectNodesInRectangle(x1, y1, x2, y2);
         },
         clearNodeSelection: () => selection.clearNodeSelection(),
+        recordUndoState,
+        beginUndoGroup,
+        endUndoGroup,
         positionGraphElements,
         setStatus,
         refreshGraphAfterMutation,
@@ -229,6 +260,7 @@ export function createPFairnessApp({
     }
 
     function addNodeAtPoint(x: number, y: number): GraphNode {
+        recordUndoState();
         const nodeData = graph.addNodeAtPoint(x, y);
         if (repulsionEnabled) {
             nodeData.fx = undefined;
@@ -285,6 +317,7 @@ export function createPFairnessApp({
             return false;
         }
 
+        recordUndoState();
         token.nodeId = targetNodeId;
         refreshTokenMoveSelectionState();
         renderTokens();
@@ -300,6 +333,11 @@ export function createPFairnessApp({
     }
 
     function addTokenAtNode(nodeId: NodeId): boolean {
+        if (!graph.canPlaceTokenAtNode(nodeId, graph.tokens, p)) {
+            return false;
+        }
+
+        recordUndoState();
         if (!graph.addTokenAtNode(nodeId, p)) {
             return false;
         }
@@ -312,11 +350,12 @@ export function createPFairnessApp({
 
     function deleteTokenAtNode(nodeId: NodeId): boolean {
         const token = graph.getTokenAtNode(nodeId);
-        if (!graph.deleteTokenAtNode(nodeId)) {
+        if (!token) {
             return false;
         }
 
-        if (!token) {
+        recordUndoState();
+        if (!graph.deleteTokenAtNode(nodeId)) {
             return false;
         }
 
@@ -474,31 +513,35 @@ export function createPFairnessApp({
     }
 
     function addEdge(sourceNodeId: NodeId, targetNodeId: NodeId): boolean {
-        if (!graph.addEdge(sourceNodeId, targetNodeId, p)) {
+        if (!graph.isEdgeAdditionValid(p, sourceNodeId, targetNodeId)) {
             return false;
         }
 
+        recordUndoState();
+        graph.addEdge(sourceNodeId, targetNodeId, p);
         refreshTokenMoveSelectionState();
         return true;
     }
 
     function removeEdge(sourceNodeId: NodeId, targetNodeId: NodeId): boolean {
-        const removed = graph.removeEdge(sourceNodeId, targetNodeId);
-
-        if (!removed) {
+        if (!graph.areNeighbors(sourceNodeId, targetNodeId)) {
             return false;
         }
 
+        recordUndoState();
+        graph.removeEdge(sourceNodeId, targetNodeId);
         refreshTokenMoveSelectionState();
         return true;
     }
 
     function removeNode(nodeId: NodeId): boolean {
-        const tokenOnNode = graph.getTokenAtNode(nodeId);
-        const removed = graph.removeNode(nodeId);
-        if (!removed) {
+        if (!graph.nodeById.has(nodeId)) {
             return false;
         }
+
+        recordUndoState();
+        const tokenOnNode = graph.getTokenAtNode(nodeId);
+        graph.removeNode(nodeId);
 
         if (tokenOnNode && selectedTokenId === tokenOnNode.id) {
             selectedTokenId = null;
@@ -581,6 +624,7 @@ export function createPFairnessApp({
             return;
         }
 
+        recordUndoState();
         p = nextP;
         graph.setP(nextP);
         refreshTokenMoveSelectionState();
@@ -607,6 +651,21 @@ export function createPFairnessApp({
 
     function saveSelection(): boolean {
         return selection.saveSelection();
+    }
+
+    function undo(): boolean {
+        const snapshot = undoStack.pop();
+
+        if (!snapshot) {
+            setStatus("Nothing to undo.");
+            return false;
+        }
+
+        interactions.stopEdgeDrag();
+
+        restoreUndoSnapshot(snapshot);
+        refreshGraphAfterMutation("Undid last operation.");
+        return true;
     }
 
     function getViewportCenter(): { x: number; y: number } {
@@ -644,6 +703,69 @@ export function createPFairnessApp({
         applyPValue(Number.parseInt(target?.value ?? "", 10));
     }
 
+    function recordUndoState(): void {
+        if (undoGroupDepth > 0) {
+            return;
+        }
+
+        undoStack.push(captureUndoSnapshot());
+        if (undoStack.length > 5) {
+            undoStack.shift();
+        }
+    }
+
+    function beginUndoGroup(): void {
+        undoGroupDepth += 1;
+    }
+
+    function endUndoGroup(): void {
+        undoGroupDepth = Math.max(0, undoGroupDepth - 1);
+    }
+
+    function captureUndoSnapshot(): AppUndoSnapshot {
+        return {
+            graph: {
+                nodes: graph.nodes.map(node => ({
+                    id: node.id,
+                    x: node.x,
+                    y: node.y,
+                    vx: node.vx,
+                    vy: node.vy,
+                    fx: node.fx,
+                    fy: node.fy,
+                    anchorX: node.anchorX,
+                    anchorY: node.anchorY,
+                })),
+                links: graph.links.map(link => ({
+                    source: graph.getLinkEndpoint(link.source),
+                    target: graph.getLinkEndpoint(link.target),
+                })),
+                tokens: graph.tokens.map(token => ({ ...token })),
+                p,
+                nextNodeId: graph.nextNodeId,
+            },
+            selectedTokenId,
+            selection: selection.createSnapshot(),
+        };
+    }
+
+    function restoreUndoSnapshot(snapshot: AppUndoSnapshot): void {
+        graph.nodes.splice(0, graph.nodes.length, ...snapshot.graph.nodes.map(node => ({ ...node })));
+        graph.links.splice(0, graph.links.length, ...snapshot.graph.links.map(link => ({ ...link })));
+        graph.tokens.splice(0, graph.tokens.length, ...snapshot.graph.tokens.map(token => ({ ...token })));
+        graph.p = snapshot.graph.p;
+        graph.nextNodeId = snapshot.graph.nextNodeId;
+        graph.refreshNodeIndex();
+
+        p = snapshot.graph.p;
+        pInput.value = String(snapshot.graph.p);
+        selectedTokenId = snapshot.selectedTokenId;
+        selection.restoreSnapshot(snapshot.selection);
+        refreshTokenMoveSelectionState();
+        updateNodeClasses();
+        updateTokenClasses();
+    }
+
     pInput.value = String(p);
     pInput.addEventListener("change", handlePChange);
     svg.call(zoomBehavior);
@@ -662,6 +784,7 @@ export function createPFairnessApp({
         clearNodeSelection() {
             selection.clearNodeSelection();
         },
+        undo,
         copySelection,
         pasteSelection,
         saveSelection,

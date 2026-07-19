@@ -34,6 +34,7 @@ export interface SelectionGesturesContext {
     positionGraphElements: () => void;
     selectNodesInRectangle: (x1: number, y1: number, x2: number, y2: number) => void;
     clearNodeSelection: () => void;
+    recordUndoState: () => void;
     setStatus: (message: string) => void;
     currentTransform: () => ZoomTransform;
 }
@@ -57,6 +58,7 @@ export class SelectionGestureManager {
     }
 
     handleNodeDragStart(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>, nodeData: ForceNodeDatum): void {
+        this.context.recordUndoState();
         const selectedNodeIds = this.context.getSelectedNodeIds();
 
         if (selectedNodeIds.length > 1 && selectedNodeIds.includes(nodeData.id)) {

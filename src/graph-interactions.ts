@@ -27,6 +27,9 @@ interface GraphInteractionContext {
     isNodeSelected: (nodeId: NodeId) => boolean;
     selectNodesInRectangle: (x1: number, y1: number, x2: number, y2: number) => void;
     clearNodeSelection: () => void;
+    recordUndoState: () => void;
+    beginUndoGroup: () => void;
+    endUndoGroup: () => void;
     positionGraphElements: () => void;
     setStatus: (message: string) => void;
     refreshGraphAfterMutation: (message?: string) => void;
@@ -70,6 +73,7 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
         positionGraphElements: context.positionGraphElements,
         selectNodesInRectangle: context.selectNodesInRectangle,
         clearNodeSelection: context.clearNodeSelection,
+        recordUndoState: context.recordUndoState,
         setStatus: context.setStatus,
         currentTransform: context.currentTransform,
     });
@@ -193,8 +197,13 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
             }
 
             const newNodeData = context.addNodeAtPoint(x, y);
-            if (context.addEdge(sourceNodeId, newNodeData.id)) {
-                context.refreshGraphAfterMutation(`Node ${newNodeData.id} added and connected to node ${sourceNodeId}.`);
+            context.beginUndoGroup();
+            try {
+                if (context.addEdge(sourceNodeId, newNodeData.id)) {
+                    context.refreshGraphAfterMutation(`Node ${newNodeData.id} added and connected to node ${sourceNodeId}.`);
+                }
+            } finally {
+                context.endUndoGroup();
             }
 
             stopEdgeDrag();

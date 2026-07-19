@@ -120,6 +120,22 @@ function bootstrap(): void {
         selectionImportInput.value = "";
     });
 
+    window.addEventListener("keydown", event => {
+        if (!currentApp || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "z") {
+            return;
+        }
+
+        const target = event.target as HTMLElement | null;
+        const isTextInput = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+
+        if (isTextInput) {
+            return;
+        }
+
+        event.preventDefault();
+        currentApp.undo();
+    });
+
     scenarioSelect.value = "0";
     layoutSelect.value = "circular";
     repulsionToggle.checked = false;
