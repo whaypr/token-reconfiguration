@@ -42,6 +42,8 @@ interface GraphInteractionContext {
 export interface GraphInteractionController {
     nodeDrag: d3.DragBehavior<SVGCircleElement, ForceNodeDatum, ForceNodeDatum>;
     tokenDrag: d3.DragBehavior<SVGCircleElement, GraphToken, ForceNodeDatum>;
+    reflectSelectionAcrossYAxis(): boolean;
+    reflectSelectionAcrossXAxis(): boolean;
     handleNodeMouseDown(event: MouseEvent, nodeData: GraphNode): void;
     handleBackgroundMouseDown(event: MouseEvent): void;
     stopEdgeDrag(): void;
@@ -212,6 +214,13 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
         }
 
         if (event.button === 2) {
+            if (event.ctrlKey) {
+                event.preventDefault();
+                event.stopPropagation();
+                selectionGestures.reflectSelectionAcrossXAxis();
+                return;
+            }
+
             event.preventDefault();
             event.stopPropagation();
             startEdgeDrag(nodeData as ForceNodeDatum);
@@ -244,6 +253,8 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
     return {
         nodeDrag,
         tokenDrag,
+        reflectSelectionAcrossYAxis: () => selectionGestures.reflectSelectionAcrossYAxis(),
+        reflectSelectionAcrossXAxis: () => selectionGestures.reflectSelectionAcrossXAxis(),
         handleNodeMouseDown,
         handleBackgroundMouseDown,
         stopEdgeDrag,

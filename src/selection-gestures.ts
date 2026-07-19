@@ -48,6 +48,14 @@ export class SelectionGestureManager {
         return this.selectionDragState !== null;
     }
 
+    reflectSelectionAcrossYAxis(): boolean {
+        return this.reflectSelection("y");
+    }
+
+    reflectSelectionAcrossXAxis(): boolean {
+        return this.reflectSelection("x");
+    }
+
     handleNodeDragStart(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>, nodeData: ForceNodeDatum): void {
         const selectedNodeIds = this.context.getSelectedNodeIds();
 
@@ -281,6 +289,55 @@ export class SelectionGestureManager {
 
         this.selectionDragState = null;
         this.context.positionGraphElements();
+    }
+
+    private reflectSelection(axis: "x" | "y"): boolean {
+        const selectedNodeIds = this.context.getSelectedNodeIds();
+
+        if (selectedNodeIds.length === 0) {
+            this.context.setStatus("Select at least one vertex before reflecting.");
+            return false;
+        }
+
+        const positions = this.snapshotSelectedNodePositions(selectedNodeIds);
+        const center = this.computeSelectionCenter(positions);
+
+        if (!center) {
+            return false;
+        }
+
+        selectedNodeIds.forEach(nodeId => {
+            const startPosition = positions.get(nodeId);
+            const nodeData = this.context.getNodeById(nodeId);
+
+            if (!startPosition || !nodeData) {
+                return;
+            }
+
+            const nextX = axis === "y" ? (2 * center.x) - startPosition.x : startPosition.x;
+            const nextY = axis === "x" ? (2 * center.y) - startPosition.y : startPosition.y;
+
+            nodeData.x = nextX;
+            nodeData.y = nextY;
+            nodeData.anchorX = nextX;
+            nodeData.anchorY = nextY;
+
+            if (this.context.isRepulsionEnabled()) {
+                nodeData.fx = undefined;
+                nodeData.fy = undefined;
+            } else {
+                nodeData.fx = nextX;
+                nodeData.fy = nextY;
+            }
+        });
+
+        this.context.positionGraphElements();
+        this.context.setStatus(
+            axis === "y"
+                ? `Reflected ${selectedNodeIds.length} selected vertices across the selection y-axis.`
+                : `Reflected ${selectedNodeIds.length} selected vertices across the selection x-axis.`,
+        );
+        return true;
     }
 
     private handleWindowMouseMove = (event: MouseEvent): void => {

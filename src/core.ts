@@ -537,7 +537,9 @@ export function createPFairnessApp({
                 if (event.ctrlKey) {
                     event.preventDefault();
                     event.stopPropagation();
-                    toggleTokenAtNode(d.id);
+                    if (!interactions.reflectSelectionAcrossYAxis()) {
+                        toggleTokenAtNode(d.id);
+                    }
                 } else {
                     handleNodeClick(d.id);
                 }
