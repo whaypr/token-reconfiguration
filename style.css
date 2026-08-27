@@ -184,6 +184,24 @@ svg:active {
     stroke-width: 4px;
 }
 
+.neighborhood-count {
+    font-size: 10px;
+    fill: #374151;
+    font-weight: 700;
+    pointer-events: none;
+    paint-order: stroke;
+    stroke: rgba(255, 255, 255, 0.9);
+    stroke-width: 3px;
+}
+
+.move-direction-hint {
+    stroke: #2563eb;
+    stroke-width: 4px;
+    stroke-linecap: round;
+    opacity: 0.9;
+    pointer-events: none;
+}
+
 .selection-preview {
     fill: rgba(37, 99, 235, 0.12);
     stroke: rgba(37, 99, 235, 0.9);

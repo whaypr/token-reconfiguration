@@ -74,6 +74,8 @@ export interface PFairnessAppConfig {
 export interface PFairnessApp {
     setStatus(message: string): void;
     setRepulsionEnabled(enabled: boolean): void;
+    setNeighborhoodCountVisibility(enabled: boolean): void;
+    setMoveDirectionVisibility(enabled: boolean): void;
     applyLayout(layout: LayoutMode): void;
     clearNodeSelection(): void;
     undo(): boolean;

@@ -40,6 +40,7 @@ interface GraphInteractionContext {
     getNodeAtPoint: (x: number, y: number, ignoredNodeId?: NodeId | null) => GraphNode | null;
     currentTransform: () => ZoomTransform;
     isRepulsionEnabled: () => boolean;
+    setOverlayRefreshPaused: (paused: boolean) => void;
 }
 
 export interface GraphInteractionController {
@@ -140,6 +141,10 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
     function handleNodeDragged(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>, _datum: unknown): void {
         const nodeData = event.subject;
 
+        if (Math.abs(event.dx) > 0 || Math.abs(event.dy) > 0) {
+            context.setOverlayRefreshPaused(true);
+        }
+
         if (selectionGestures.isSelectionDragActive()) {
             selectionGestures.handleNodeDragged(event, nodeData);
             return;
@@ -156,6 +161,7 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
         }
 
         selectionGestures.handleNodeDragEnd(event, nodeData);
+        context.setOverlayRefreshPaused(false);
     }
 
     function createDragBehavior<TDatum>(subjectAccessor: (event: D3DragEvent<SVGCircleElement, TDatum, ForceNodeDatum>, datum: TDatum) => ForceNodeDatum): d3.DragBehavior<SVGCircleElement, TDatum, ForceNodeDatum> {

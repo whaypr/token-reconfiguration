@@ -6,6 +6,8 @@ function bootstrap(): void {
     const scenarioSelect = document.getElementById("scenarioSelect") as HTMLSelectElement;
     const layoutSelect = document.getElementById("layoutSelect") as HTMLSelectElement;
     const repulsionToggle = document.getElementById("repulsionToggle") as HTMLInputElement;
+    const neighborhoodCountToggle = document.getElementById("neighborhoodCountToggle") as HTMLInputElement;
+    const moveDirectionToggle = document.getElementById("moveDirectionToggle") as HTMLInputElement;
     const copySelectionButton = document.getElementById("copySelectionButton") as HTMLButtonElement;
     const pasteSelectionButton = document.getElementById("pasteSelectionButton") as HTMLButtonElement;
     const saveSelectionButton = document.getElementById("saveSelectionButton") as HTMLButtonElement;
@@ -14,7 +16,7 @@ function bootstrap(): void {
     const deleteSelectionButton = document.getElementById("deleteSelectionButton") as HTMLButtonElement;
     const selectionImportInput = document.getElementById("selectionImportInput") as HTMLInputElement;
 
-    if (!scenarioSelect || !layoutSelect || !repulsionToggle || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0) {
+    if (!scenarioSelect || !layoutSelect || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0) {
         window.setTimeout(bootstrap, 0);
         return;
     }
@@ -28,6 +30,8 @@ function bootstrap(): void {
 
         currentApp.applyLayout(layoutSelect.value as LayoutMode);
         currentApp.setRepulsionEnabled(repulsionToggle.checked);
+        currentApp.setNeighborhoodCountVisibility(neighborhoodCountToggle.checked);
+        currentApp.setMoveDirectionVisibility(moveDirectionToggle.checked);
     }
 
     function renderScenarioOptions(): void {
@@ -76,6 +80,18 @@ function bootstrap(): void {
     repulsionToggle.addEventListener("change", () => {
         if (currentApp) {
             currentApp.setRepulsionEnabled(repulsionToggle.checked);
+        }
+    });
+
+    neighborhoodCountToggle.addEventListener("change", () => {
+        if (currentApp) {
+            currentApp.setNeighborhoodCountVisibility(neighborhoodCountToggle.checked);
+        }
+    });
+
+    moveDirectionToggle.addEventListener("change", () => {
+        if (currentApp) {
+            currentApp.setMoveDirectionVisibility(moveDirectionToggle.checked);
         }
     });
 
@@ -139,6 +155,8 @@ function bootstrap(): void {
     scenarioSelect.value = "0";
     layoutSelect.value = "circular";
     repulsionToggle.checked = false;
+    neighborhoodCountToggle.checked = false;
+    moveDirectionToggle.checked = false;
     loadScenario(0);
 }
 

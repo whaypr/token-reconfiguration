@@ -79,6 +79,9 @@ export function createPFairnessApp({
     let legalMoveTargets = new Set<NodeId>();
     let currentLayout: LayoutMode = "circular";
     let repulsionEnabled = false;
+    let showNeighborhoodCounts = false;
+    let showMoveDirections = false;
+    let overlayRefreshPaused = false;
     let currentTransform: ZoomTransform = d3.zoomIdentity;
     let p = initialP;
     const undoStack: AppUndoSnapshot[] = [];
@@ -95,6 +98,9 @@ export function createPFairnessApp({
     const linkLayer = graphViewport.append("g").attr("class", "link-layer");
     const nodeLayer = graphViewport.append("g").attr("class", "node-layer");
     const tokenLayer = graphViewport.append("g").attr("class", "token-layer");
+    const overlayLayer = graphViewport.append("g").attr("class", "overlay-layer");
+    const neighborhoodCountLayer = overlayLayer.append("g").attr("class", "neighborhood-count-layer");
+    const moveDirectionLayer = overlayLayer.append("g").attr("class", "move-direction-layer");
     const interactionLayer = graphViewport.append("g").attr("class", "interaction-layer");
     const edgePreview = interactionLayer.append("line")
         .attr("class", "edge-preview")
@@ -165,6 +171,15 @@ export function createPFairnessApp({
         getNodeAtPoint,
         currentTransform: () => currentTransform,
         isRepulsionEnabled: () => repulsionEnabled,
+        setOverlayRefreshPaused: (paused: boolean) => {
+            overlayRefreshPaused = paused;
+            if (paused) {
+                neighborhoodCountLayer.selectAll<SVGTextElement, GraphNode>(".neighborhood-count").remove();
+                moveDirectionLayer.selectAll<SVGLineElement, { key: string; x1: number; y1: number; x2: number; y2: number }>(".move-direction-hint").remove();
+                return;
+            }
+            refreshOverlayState();
+        },
     });
 
     function setSimulationForces(): void {
@@ -283,6 +298,9 @@ export function createPFairnessApp({
         legalMoveTargets = new Set<NodeId>();
         updateNodeClasses();
         updateTokenClasses();
+        if (!overlayRefreshPaused) {
+            renderMoveDirectionHints();
+        }
         setStatus(statusMessage);
     }
 
@@ -297,6 +315,9 @@ export function createPFairnessApp({
         selection.clearNodeSelection();
         updateNodeClasses();
         updateTokenClasses();
+        if (!overlayRefreshPaused) {
+            renderMoveDirectionHints();
+        }
 
         if (legalMoveTargets.size === 0) {
             setStatus(`Token ${tokenId} is frozen and cannot move.`);
@@ -321,6 +342,7 @@ export function createPFairnessApp({
         token.nodeId = targetNodeId;
         refreshTokenMoveSelectionState();
         renderTokens();
+        refreshOverlayState();
         updateNodeClasses();
 
         if (legalMoveTargets.size === 0) {
@@ -343,6 +365,7 @@ export function createPFairnessApp({
         }
 
         renderTokens();
+        refreshOverlayState();
         updateNodeClasses();
         setStatus(`Token added at node ${nodeId}.`);
         return true;
@@ -367,6 +390,7 @@ export function createPFairnessApp({
         }
 
         renderTokens();
+        refreshOverlayState();
         setStatus(`Token removed from node ${nodeId}.`);
         return true;
     }
@@ -411,6 +435,92 @@ export function createPFairnessApp({
             });
     }
 
+    function renderNeighborhoodCountLabels(): void {
+        if (overlayRefreshPaused || !showNeighborhoodCounts) {
+            neighborhoodCountLayer.selectAll<SVGTextElement, GraphNode>(".neighborhood-count").remove();
+            return;
+        }
+
+        const labels = neighborhoodCountLayer.selectAll<SVGTextElement, GraphNode>(".neighborhood-count")
+            .data(graph.nodes, d => String(d.id))
+            .join(
+                enter => enter.append("text")
+                    .attr("class", "neighborhood-count")
+                    .attr("text-anchor", "middle")
+                    .attr("dominant-baseline", "middle"),
+                update => update,
+                exit => exit.remove(),
+            );
+
+        labels
+            .attr("x", d => d.x + 18)
+            .attr("y", d => d.y - 16)
+            .text(d => String(graph.countTokensInNeighborhood(graph.getClosedNeighborhood(d.id), graph.tokens)));
+    }
+
+    function renderMoveDirectionHints(): void {
+        if (overlayRefreshPaused || !showMoveDirections) {
+            moveDirectionLayer.selectAll<SVGLineElement, { key: string; x1: number; y1: number; x2: number; y2: number }>(".move-direction-hint").remove();
+            return;
+        }
+
+        const hints = graph.tokens.flatMap(token => {
+            const sourceNode = graph.nodeById.get(token.nodeId);
+            if (!sourceNode) {
+                return [];
+            }
+
+            return graph.getLegalMoveTargets(token.id).map(targetNodeId => {
+                const targetNode = graph.nodeById.get(targetNodeId);
+                if (!targetNode) {
+                    return null;
+                }
+
+                const dx = targetNode.x - sourceNode.x;
+                const dy = targetNode.y - sourceNode.y;
+                const length = Math.hypot(dx, dy) || 1;
+                const unitX = dx / length;
+                const unitY = dy / length;
+                const segmentLength = Math.min(28, length * 0.35)
+                const startDistance = 12;
+
+                return {
+                    key: `${token.id}-${String(targetNodeId)}`,
+                    x1: sourceNode.x + unitX * startDistance,
+                    y1: sourceNode.y + unitY * startDistance,
+                    x2: sourceNode.x + unitX * (startDistance + segmentLength),
+                    y2: sourceNode.y + unitY * (startDistance + segmentLength),
+                };
+            }).filter((hint): hint is { key: string; x1: number; y1: number; x2: number; y2: number } => hint !== null);
+        });
+
+        const hintSelection = moveDirectionLayer.selectAll<SVGLineElement, { key: string; x1: number; y1: number; x2: number; y2: number }>(".move-direction-hint")
+            .data(hints, d => d.key)
+            .join(
+                enter => enter.append("line")
+                    .attr("class", "move-direction-hint"),
+                update => update,
+                exit => exit.remove(),
+            );
+
+        hintSelection
+            .attr("x1", d => d.x1)
+            .attr("y1", d => d.y1)
+            .attr("x2", d => d.x2)
+            .attr("y2", d => d.y2);
+    }
+
+    function refreshOverlayState(): void {
+        if (overlayRefreshPaused) {
+            neighborhoodCountLayer.selectAll<SVGTextElement, GraphNode>(".neighborhood-count").remove();
+            moveDirectionLayer.selectAll<SVGLineElement, { key: string; x1: number; y1: number; x2: number; y2: number }>(".move-direction-hint").remove();
+            return;
+        }
+
+        renderNeighborhoodCountLabels();
+        renderMoveDirectionHints();
+    }
+
     function positionGraphElements(): void {
         linkLayer.selectAll<SVGLineElement, GraphLink>(".link")
             .attr("x1", d => (d.source as GraphNode).x)
@@ -423,6 +533,7 @@ export function createPFairnessApp({
             .attr("cy", d => d.y);
 
         positionTokens();
+        refreshOverlayState();
     }
 
     function updateNodeClasses(): void {
@@ -603,6 +714,7 @@ export function createPFairnessApp({
         renderGraph();
         renderTokens();
         refreshTokenMoveSelectionState();
+        refreshOverlayState();
         updateNodeClasses();
         updateTokenClasses();
         positionGraphElements();
@@ -628,9 +740,20 @@ export function createPFairnessApp({
         p = nextP;
         graph.setP(nextP);
         refreshTokenMoveSelectionState();
+        refreshOverlayState();
         updateNodeClasses();
         updateTokenClasses();
         setStatus(`p updated to ${p}.`);
+    }
+
+    function setNeighborhoodCountVisibility(enabled: boolean): void {
+        showNeighborhoodCounts = enabled;
+        refreshOverlayState();
+    }
+
+    function setMoveDirectionVisibility(enabled: boolean): void {
+        showMoveDirections = enabled;
+        refreshOverlayState();
     }
 
     function copySelection(): boolean {
@@ -762,6 +885,7 @@ export function createPFairnessApp({
         selectedTokenId = snapshot.selectedTokenId;
         selection.restoreSnapshot(snapshot.selection);
         refreshTokenMoveSelectionState();
+        refreshOverlayState();
         updateNodeClasses();
         updateTokenClasses();
     }
@@ -780,6 +904,8 @@ export function createPFairnessApp({
     return {
         setStatus,
         setRepulsionEnabled,
+        setNeighborhoodCountVisibility,
+        setMoveDirectionVisibility,
         applyLayout,
         clearNodeSelection() {
             selection.clearNodeSelection();
