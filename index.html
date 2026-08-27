@@ -40,6 +40,8 @@
         </div>
     </details>
 
+    <div id="status"></div>
+
     <div id="controls">
         <label>
             <strong>Scenario:</strong>
@@ -57,6 +59,10 @@
             </select>
         </label>
         <label>
+            <strong>p:</strong>
+            <input type="number" id="pValue" value="2" min="0" max="10">
+        </label>
+        <label>
             <input type="checkbox" id="repulsionToggle">
             <strong>Repulsive force</strong>
         </label>
@@ -67,10 +73,6 @@
         <label>
             <input type="checkbox" id="moveDirectionToggle">
             <strong>Token moves</strong>
-        </label>
-        <label>
-            <strong>p:</strong>
-            <input type="number" id="pValue" value="2" min="0" max="10">
         </label>
         <div class="selection-actions">
             <button type="button" id="clearSelectionButton">Clear</button>
@@ -84,8 +86,6 @@
             <button type="button" id="deleteSelectionButton">Delete</button>
         </div>
     </div>
-
-    <div id="status"></div>
 
     <input id="selectionImportInput" type="file" accept="application/json" hidden>
 
