@@ -703,6 +703,11 @@ export function createPFairnessApp({
 
         background
             .on("mousedown", interactions.handleBackgroundMouseDown)
+            .on("click", (event: MouseEvent) => {
+                if (event.button === 0 && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+                    clearTokenMoveSelection();
+                }
+            })
             .on("contextmenu", (event: MouseEvent) => event.preventDefault());
 
         updateNodeClasses();
