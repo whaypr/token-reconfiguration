@@ -48,6 +48,26 @@ export interface GraphToken {
     nodeId: NodeId;
 }
 
+export interface ProblemRules {
+    isConfigurationValid(state: unknown, candidateTokens: GraphToken[], parameter: number): boolean;
+    canPlaceTokenAtNode(state: unknown, nodeId: NodeId, candidateTokens: GraphToken[], parameter: number): boolean;
+    canMoveToken(state: unknown, tokenId: string, targetNodeId: NodeId, parameter: number): boolean;
+    getLegalMoveTargets(state: unknown, tokenId: string, parameter: number): NodeId[];
+    isEdgeAdditionValid(state: unknown, parameter: number, sourceNodeId: NodeId, targetNodeId: NodeId): boolean;
+}
+
+export interface ProblemDefinition {
+    id: string;
+    name: string;
+    parameterLabel: string;
+    parameterDescription: string;
+    defaultParameter: number;
+    minParameter: number;
+    maxParameter: number;
+    parameterStep: number;
+    rules: ProblemRules;
+}
+
 export interface SerializedSubgraphNode {
     id: NodeId;
     x: number;
@@ -63,12 +83,13 @@ export interface SerializedSubgraph {
 
 export interface PFairnessAppConfig {
     svgSelector: string;
-    pInputSelector: string;
+    parameterInputSelector: string;
     statusSelector: string;
     nodes: Array<NodeId | ScenarioNodeInput>;
     links: GraphLinkInput[];
     tokens: TokenInput[];
-    initialP: number;
+    initialParameter: number;
+    problem: ProblemDefinition;
 }
 
 export interface PFairnessApp {

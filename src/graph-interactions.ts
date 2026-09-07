@@ -196,7 +196,7 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
                 } else if (context.addEdge(sourceNodeId, targetNode.id)) {
                     context.refreshGraphAfterMutation(`Edge added between nodes ${sourceNodeId} and ${targetNode.id}.`);
                 } else {
-                    context.setStatus(`Edge between nodes ${sourceNodeId} and ${targetNode.id} would violate p-fairness, so it was blocked.`);
+                    context.setStatus(`Edge between nodes ${sourceNodeId} and ${targetNode.id} would violate the current problem constraints, so it was blocked.`);
                 }
                 stopEdgeDrag();
                 return;
@@ -207,6 +207,9 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
             try {
                 if (context.addEdge(sourceNodeId, newNodeData.id)) {
                     context.refreshGraphAfterMutation(`Node ${newNodeData.id} added and connected to node ${sourceNodeId}.`);
+                } else {
+                    context.removeNode(newNodeData.id);
+                    context.setStatus("The new edge would violate the current problem constraints, so the new vertex was not added.");
                 }
             } finally {
                 context.endUndoGroup();

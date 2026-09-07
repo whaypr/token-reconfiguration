@@ -1,5 +1,5 @@
 import { Graph } from "./graph";
-import type { GraphNode, NodeId, ScenarioNodeInput } from "./types";
+import type { GraphNode, NodeId, ProblemRules, ScenarioNodeInput } from "./types";
 
 function normalizeNodeInput(node: NodeId | ScenarioNodeInput): ScenarioNodeInput {
     return typeof node === "object" && node !== null ? node : { id: node };
@@ -44,7 +44,8 @@ export function createGraph(
     nodes: Array<NodeId | ScenarioNodeInput>,
     links: Array<{ source: NodeId; target: NodeId }>,
     tokens: Array<{ id: string; nodeId: NodeId }>,
-    initialP: number,
+    initialParameter: number,
+    rules: ProblemRules,
     width: number,
     height: number,
 ): Graph {
@@ -52,7 +53,8 @@ export function createGraph(
         nodes: nodes.map((node, index) => createGraphNode(node, index, nodes.length, width, height)),
         links: links.map(link => ({ ...link })),
         tokens: tokens.map(token => ({ ...token })),
-        p: initialP,
+        parameter: initialParameter,
+        rules,
         nextNodeId: getNextNodeId(nodes),
     });
 }

@@ -1,17 +1,5 @@
-import type { Graph } from "./graph";
 import type { GraphToken, NodeId } from "./types";
-
-type GraphRuleContext = Pick<
-    Graph,
-    | "nodes"
-    | "links"
-    | "tokens"
-    | "getClosedNeighborhood"
-    | "countTokensInNeighborhood"
-    | "areNeighbors"
-    | "getLinkEndpoint"
-    | "hasEdge"
->;
+import type { GraphRuleContext, TypedProblemRules } from "./problem-rules";
 
 export function isConfigurationValid(
     state: GraphRuleContext,
@@ -120,3 +108,11 @@ export function isEdgeAdditionValid(
         return state.countTokensInNeighborhood(neighborhood, state.tokens) <= p;
     });
 }
+
+export const pFairnessRules: TypedProblemRules = {
+    isConfigurationValid,
+    canPlaceTokenAtNode,
+    canMoveToken,
+    getLegalMoveTargets,
+    isEdgeAdditionValid,
+};

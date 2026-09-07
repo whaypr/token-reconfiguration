@@ -41,7 +41,7 @@ type AppUndoSnapshot = {
         nodes: GraphNodeSnapshot[];
         links: Array<{ source: NodeId; target: NodeId }>;
         tokens: Array<{ id: string; nodeId: NodeId }>;
-        p: number;
+        parameter: number;
         nextNodeId: number;
     };
     selectedTokenId: string | null;
@@ -52,17 +52,18 @@ type SvgSelection = Selection<SVGSVGElement, unknown, null, undefined>;
 
 export function createPFairnessApp({
     svgSelector,
-    pInputSelector,
+    parameterInputSelector,
     statusSelector,
     nodes,
     links,
     tokens: initialTokens,
-    initialP,
+    initialParameter,
+    problem,
 }: PFairnessAppConfig): PFairnessApp {
     const svg = d3.select(svgSelector) as unknown as SvgSelection;
     const width = Number(svg.attr("width"));
     const height = Number(svg.attr("height"));
-    const pInput = document.querySelector(pInputSelector) as HTMLInputElement;
+    const pInput = document.querySelector(parameterInputSelector) as HTMLInputElement;
     const statusElement = document.querySelector(statusSelector) as HTMLElement;
 
     if (!pInput || !statusElement) {
@@ -71,7 +72,7 @@ export function createPFairnessApp({
 
     svg.style("touch-action", "none");
 
-    const graph = createGraph(nodes, links, initialTokens, initialP, width, height);
+    const graph = createGraph(nodes, links, initialTokens, initialParameter, problem.rules, width, height);
 
     const graphNodes: ForceNodeDatum[] = graph.nodes as ForceNodeDatum[];
     const graphLinks: ForceLinkDatum[] = graph.links as ForceLinkDatum[];
@@ -83,7 +84,7 @@ export function createPFairnessApp({
     let showMoveDirections = false;
     let overlayRefreshPaused = false;
     let currentTransform: ZoomTransform = d3.zoomIdentity;
-    let p = initialP;
+    let parameter = initialParameter;
     const undoStack: AppUndoSnapshot[] = [];
     let undoGroupDepth = 0;
 
@@ -328,7 +329,7 @@ export function createPFairnessApp({
 
     function moveToken(tokenId: string, targetNodeId: NodeId): boolean {
         if (!graph.canMoveToken(tokenId, targetNodeId)) {
-            setStatus("That move would violate the p-fairness rule, so it was blocked.");
+            setStatus(`That move would violate the ${problem.name} rule, so it was blocked.`);
             return false;
         }
 
@@ -355,12 +356,12 @@ export function createPFairnessApp({
     }
 
     function addTokenAtNode(nodeId: NodeId): boolean {
-        if (!graph.canPlaceTokenAtNode(nodeId, graph.tokens, p)) {
+        if (!graph.canPlaceTokenAtNode(nodeId, graph.tokens, parameter)) {
             return false;
         }
 
         recordUndoState();
-        if (!graph.addTokenAtNode(nodeId, p)) {
+        if (!graph.addTokenAtNode(nodeId, parameter)) {
             return false;
         }
 
@@ -624,12 +625,12 @@ export function createPFairnessApp({
     }
 
     function addEdge(sourceNodeId: NodeId, targetNodeId: NodeId): boolean {
-        if (!graph.isEdgeAdditionValid(p, sourceNodeId, targetNodeId)) {
+        if (!graph.isEdgeAdditionValid(parameter, sourceNodeId, targetNodeId)) {
             return false;
         }
 
         recordUndoState();
-        graph.addEdge(sourceNodeId, targetNodeId, p);
+        graph.addEdge(sourceNodeId, targetNodeId, parameter);
         refreshTokenMoveSelectionState();
         return true;
     }
@@ -729,26 +730,26 @@ export function createPFairnessApp({
         }
     }
 
-    function applyPValue(nextP: number): void {
-        if (Number.isNaN(nextP)) {
-            pInput.value = String(p);
+    function applyParameterValue(nextParameter: number): void {
+        if (Number.isNaN(nextParameter)) {
+            pInput.value = String(parameter);
             return;
         }
 
-        if (!graph.isConfigurationValid(graph.tokens, nextP)) {
-            pInput.value = String(p);
-            setStatus(`p = ${nextP} would make the current configuration invalid, so it was rejected.`);
+        if (!graph.isConfigurationValid(graph.tokens, nextParameter)) {
+            pInput.value = String(parameter);
+            setStatus(`${problem.parameterLabel} = ${nextParameter} would make the current configuration invalid, so it was rejected.`);
             return;
         }
 
         recordUndoState();
-        p = nextP;
-        graph.setP(nextP);
+        parameter = nextParameter;
+        graph.setParameter(nextParameter);
         refreshTokenMoveSelectionState();
         refreshOverlayState();
         updateNodeClasses();
         updateTokenClasses();
-        setStatus(`p updated to ${p}.`);
+        setStatus(`${problem.parameterLabel} updated to ${parameter}.`);
     }
 
     function setNeighborhoodCountVisibility(enabled: boolean): void {
@@ -828,7 +829,7 @@ export function createPFairnessApp({
 
     function handlePChange(event: Event): void {
         const target = event.target as HTMLInputElement | null;
-        applyPValue(Number.parseInt(target?.value ?? "", 10));
+        applyParameterValue(Number.parseInt(target?.value ?? "", 10));
     }
 
     function recordUndoState(): void {
@@ -869,7 +870,7 @@ export function createPFairnessApp({
                     target: graph.getLinkEndpoint(link.target),
                 })),
                 tokens: graph.tokens.map(token => ({ ...token })),
-                p,
+                parameter,
                 nextNodeId: graph.nextNodeId,
             },
             selectedTokenId,
@@ -881,12 +882,12 @@ export function createPFairnessApp({
         graph.nodes.splice(0, graph.nodes.length, ...snapshot.graph.nodes.map(node => ({ ...node })));
         graph.links.splice(0, graph.links.length, ...snapshot.graph.links.map(link => ({ ...link })));
         graph.tokens.splice(0, graph.tokens.length, ...snapshot.graph.tokens.map(token => ({ ...token })));
-        graph.p = snapshot.graph.p;
+        graph.parameter = snapshot.graph.parameter;
         graph.nextNodeId = snapshot.graph.nextNodeId;
         graph.refreshNodeIndex();
 
-        p = snapshot.graph.p;
-        pInput.value = String(snapshot.graph.p);
+        parameter = snapshot.graph.parameter;
+        pInput.value = String(snapshot.graph.parameter);
         selectedTokenId = snapshot.selectedTokenId;
         selection.restoreSnapshot(snapshot.selection);
         refreshTokenMoveSelectionState();
@@ -895,7 +896,7 @@ export function createPFairnessApp({
         updateTokenClasses();
     }
 
-    pInput.value = String(p);
+    pInput.value = String(parameter);
     pInput.addEventListener("change", handlePChange);
     svg.call(zoomBehavior);
     svg.on("contextmenu", (event: MouseEvent) => event.preventDefault());

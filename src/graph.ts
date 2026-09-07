@@ -1,17 +1,12 @@
-import type { GraphLink, GraphNode, GraphToken, NodeId } from "./types";
-import {
-    canMoveToken as canMoveTokenInGraph,
-    canPlaceTokenAtNode as canPlaceTokenAtNodeInGraph,
-    getLegalMoveTargets as getLegalMoveTargetsInGraph,
-    isConfigurationValid as isConfigurationValidInGraph,
-    isEdgeAdditionValid as isEdgeAdditionValidInGraph,
-} from "./p-fairness-rules";
+import type { GraphLink, GraphNode, GraphToken, NodeId, ProblemRules } from "./types";
+import type { GraphRuleContext } from "./problem-rules";
 
 export class Graph {
     public readonly nodes: GraphNode[];
     public readonly links: GraphLink[];
     public tokens: GraphToken[];
-    public p: number;
+    public parameter: number;
+    public readonly rules: ProblemRules;
     public nextNodeId: number;
     public nodeById: Map<NodeId, GraphNode>;
 
@@ -19,19 +14,22 @@ export class Graph {
         nodes,
         links,
         tokens,
-        p,
+        parameter,
+        rules,
         nextNodeId,
     }: {
         nodes: GraphNode[];
         links: GraphLink[];
         tokens: GraphToken[];
-        p: number;
+        parameter: number;
+        rules: ProblemRules;
         nextNodeId: number;
     }) {
         this.nodes = nodes;
         this.links = links;
         this.tokens = tokens;
-        this.p = p;
+        this.parameter = parameter;
+        this.rules = rules;
         this.nextNodeId = nextNodeId;
         this.nodeById = new Map(nodes.map(node => [node.id, node]));
     }
@@ -101,32 +99,32 @@ export class Graph {
         return nextNodeId;
     }
 
-    setP(nextP: number): void {
-        this.p = nextP;
+    setParameter(nextParameter: number): void {
+        this.parameter = nextParameter;
     }
 
     getTokenAtNode(nodeId: NodeId, ignoredTokenId: string | null = null): GraphToken | null {
         return this.tokens.find(token => token.nodeId === nodeId && token.id !== ignoredTokenId) || null;
     }
 
-    isConfigurationValid(candidateTokens: GraphToken[] = this.tokens, candidateP: number = this.p): boolean {
-        return isConfigurationValidInGraph(this, candidateTokens, candidateP);
+    isConfigurationValid(candidateTokens: GraphToken[] = this.tokens, candidateParameter: number = this.parameter): boolean {
+        return this.rules.isConfigurationValid(this as GraphRuleContext, candidateTokens, candidateParameter);
     }
 
-    canPlaceTokenAtNode(nodeId: NodeId, candidateTokens: GraphToken[] = this.tokens, candidateP: number = this.p): boolean {
-        return canPlaceTokenAtNodeInGraph(this, nodeId, candidateTokens, candidateP);
+    canPlaceTokenAtNode(nodeId: NodeId, candidateTokens: GraphToken[] = this.tokens, candidateParameter: number = this.parameter): boolean {
+        return this.rules.canPlaceTokenAtNode(this as GraphRuleContext, nodeId, candidateTokens, candidateParameter);
     }
 
-    canMoveToken(tokenId: string, targetNodeId: NodeId, candidateP: number = this.p): boolean {
-        return canMoveTokenInGraph(this, tokenId, targetNodeId, candidateP);
+    canMoveToken(tokenId: string, targetNodeId: NodeId, candidateParameter: number = this.parameter): boolean {
+        return this.rules.canMoveToken(this as GraphRuleContext, tokenId, targetNodeId, candidateParameter);
     }
 
-    getLegalMoveTargets(tokenId: string, candidateP: number = this.p): NodeId[] {
-        return getLegalMoveTargetsInGraph(this, tokenId, candidateP);
+    getLegalMoveTargets(tokenId: string, candidateParameter: number = this.parameter): NodeId[] {
+        return this.rules.getLegalMoveTargets(this as GraphRuleContext, tokenId, candidateParameter);
     }
 
-    isEdgeAdditionValid(p: number, sourceNodeId: NodeId, targetNodeId: NodeId): boolean {
-        return isEdgeAdditionValidInGraph(this, p, sourceNodeId, targetNodeId);
+    isEdgeAdditionValid(parameter: number, sourceNodeId: NodeId, targetNodeId: NodeId): boolean {
+        return this.rules.isEdgeAdditionValid(this as GraphRuleContext, parameter, sourceNodeId, targetNodeId);
     }
 
     addNodeAtPoint(x: number, y: number): GraphNode {
@@ -151,8 +149,8 @@ export class Graph {
         return typeof endpoint === "object" ? endpoint.id : endpoint;
     }
 
-    addEdge(sourceNodeId: NodeId, targetNodeId: NodeId, p: number): boolean {
-        if (!this.isEdgeAdditionValid(p, sourceNodeId, targetNodeId)) {
+    addEdge(sourceNodeId: NodeId, targetNodeId: NodeId, parameter: number): boolean {
+        if (!this.isEdgeAdditionValid(parameter, sourceNodeId, targetNodeId)) {
             return false;
         }
 
@@ -214,7 +212,7 @@ export class Graph {
         return true;
     }
 
-    addTokenAtNode(nodeId: NodeId, p: number): boolean {
+    addTokenAtNode(nodeId: NodeId, parameter: number): boolean {
         if (this.getTokenAtNode(nodeId)) {
             return false;
         }
@@ -222,7 +220,7 @@ export class Graph {
         const tokenId = `t${Date.now()}${Math.floor(Math.random() * 1000)}`;
         const proposedTokens = [...this.tokens, { id: tokenId, nodeId }];
 
-        if (!this.isConfigurationValid(proposedTokens, p)) {
+        if (!this.isConfigurationValid(proposedTokens, parameter)) {
             return false;
         }
 

@@ -1,9 +1,13 @@
 import { createPFairnessApp } from "./core";
+import { problems } from "./problems";
 import { scenarios } from "./scenarios";
 import type { LayoutMode, PFairnessApp } from "./types";
 
 function bootstrap(): void {
     const scenarioSelect = document.getElementById("scenarioSelect") as HTMLSelectElement;
+    const problemSelect = document.getElementById("problemSelect") as HTMLSelectElement;
+    const parameterLabel = document.getElementById("parameterLabel") as HTMLElement;
+    const parameterDescription = document.getElementById("parameterDescription") as HTMLElement;
     const layoutSelect = document.getElementById("layoutSelect") as HTMLSelectElement;
     const repulsionToggle = document.getElementById("repulsionToggle") as HTMLInputElement;
     const neighborhoodCountToggle = document.getElementById("neighborhoodCountToggle") as HTMLInputElement;
@@ -16,12 +20,22 @@ function bootstrap(): void {
     const deleteSelectionButton = document.getElementById("deleteSelectionButton") as HTMLButtonElement;
     const selectionImportInput = document.getElementById("selectionImportInput") as HTMLInputElement;
 
-    if (!scenarioSelect || !layoutSelect || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0) {
+    if (!scenarioSelect || !problemSelect || !parameterLabel || !parameterDescription || !layoutSelect || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0 || problems.length === 0) {
         window.setTimeout(bootstrap, 0);
         return;
     }
 
     let currentApp: PFairnessApp | null = null;
+    let currentProblem = problems[0];
+
+    function renderProblem(problem = currentProblem): void {
+        parameterLabel.textContent = `${problem.parameterLabel}:`;
+        parameterDescription.textContent = problem.parameterDescription;
+        const parameterInput = document.getElementById("parameterValue") as HTMLInputElement;
+        parameterInput.min = String(problem.minParameter);
+        parameterInput.max = String(problem.maxParameter);
+        parameterInput.step = String(problem.parameterStep);
+    }
 
     function applyControlsToApp(): void {
         if (!currentApp) {
@@ -54,12 +68,13 @@ function bootstrap(): void {
 
         currentApp = createPFairnessApp({
             svgSelector: "svg",
-            pInputSelector: "#pValue",
+            parameterInputSelector: "#parameterValue",
             statusSelector: "#status",
             nodes: scenario.nodes,
             links: scenario.links,
             tokens: scenario.tokens,
-            initialP: scenario.initialP,
+            initialParameter: currentProblem.id === "p-fairness" ? scenario.initialP : currentProblem.defaultParameter,
+            problem: currentProblem,
         });
 
         applyControlsToApp();
@@ -67,6 +82,19 @@ function bootstrap(): void {
     }
 
     renderScenarioOptions();
+
+    problems.forEach((problem, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = problem.name;
+        problemSelect.appendChild(option);
+    });
+
+    problemSelect.addEventListener("change", event => {
+        currentProblem = problems[Number.parseInt((event.target as HTMLSelectElement).value, 10)] || problems[0];
+        renderProblem();
+        loadScenario(Number.parseInt(scenarioSelect.value, 10));
+    });
 
     scenarioSelect.addEventListener("change", event => {
         const target = event.target as HTMLSelectElement;
@@ -153,6 +181,8 @@ function bootstrap(): void {
     });
 
     scenarioSelect.value = "0";
+    problemSelect.value = "0";
+    renderProblem();
     layoutSelect.value = "circular";
     repulsionToggle.checked = false;
     neighborhoodCountToggle.checked = false;

@@ -44,6 +44,10 @@
 
     <div id="controls">
         <label>
+            <strong>Problem:</strong>
+            <select id="problemSelect"></select>
+        </label>
+        <label>
             <strong>Scenario:</strong>
             <select id="scenarioSelect"></select>
         </label>
@@ -59,8 +63,9 @@
             </select>
         </label>
         <label>
-            <strong>p:</strong>
-            <input type="number" id="pValue" value="2" min="0" max="10">
+            <strong id="parameterLabel">p:</strong>
+            <input type="number" id="parameterValue" value="2" min="0" max="10">
+            <span id="parameterDescription"></span>
         </label>
         <label>
             <input type="checkbox" id="repulsionToggle">

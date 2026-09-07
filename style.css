@@ -104,6 +104,12 @@ svg:active {
     padding: 4px 8px;
 }
 
+#parameterDescription {
+    color: #6b7280;
+    font-size: 0.82em;
+    max-width: 260px;
+}
+
 .selection-actions {
     display: flex;
     flex-wrap: wrap;
