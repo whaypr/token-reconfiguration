@@ -29,7 +29,7 @@ function bootstrap(): void {
     let currentProblem = problems[0];
 
     function renderProblem(problem = currentProblem): void {
-        parameterLabel.textContent = `${problem.parameterLabel}:`;
+        parameterLabel.textContent = `${problem.parameterLabel}`;
         parameterDescription.textContent = problem.parameterDescription;
         const parameterInput = document.getElementById("parameterValue") as HTMLInputElement;
         parameterInput.min = String(problem.minParameter);

@@ -8,93 +8,123 @@
 </head>
 
 <body>
-    <details class="instructions-panel">
-        <summary>How to use</summary>
-        <div class="instructions-content">
-            <p>
-                Left-drag the background to pan. Mouse wheel to zoom in/out.
-                <br>
-                Middle-click an empty space to add a vertex, middle-click a vertex to remove it.
-                <br>
-                Right-drag from a vertex to empty space create a connected vertex, right-drag from a vertex to another vertex to create an edge, do it again to remove it.
-            </p>
-            <p>
-                Right-drag on empty space to select a rectangular area.
-                <br>
-                Left-drag a vertex or selected vertices to move them.
-                Shift+left-drag selected vertices to rotate them.
-                Ctrl+left-click to reflect across the y-axis, Ctrl+right-click to reflect across their x-axis.
-            </p>
-            <p>
-                Orange nodes can accept a new token.
-                <br>
-                Tokens on green nodes can move, tokens on red nodes cannot move.
-            </p>
-            <p>
-                Ctrl+left-click a vertex to create a token, do it again to remove it.
-                <br>
-                Left-click a token to see legal moves, do it again to hide them.
-            </p>
-            <p>
-                Ctrl+Z to undo up to 5 previous actions.
+    <header class="app-header">
+        <div>
+            <p class="eyebrow">Graph Playground</p>
+            <h1>Token reconfiguration</h1>
         </div>
-    </details>
+        <details class="instructions-panel">
+            <summary>Interaction guide</summary>
+            <div class="instructions-content">
+                <p>
+                    Left-drag the background to pan. Mouse wheel to zoom in/out.
+                    <br>
+                    Middle-click an empty space to add a vertex, middle-click a vertex to remove it.
+                    <br>
+                    Right-drag from a vertex to empty space create a connected vertex, right-drag from a vertex to
+                    another vertex to create an edge, do it again to remove it.
+                </p>
+                <p>
+                    Right-drag on empty space to select a rectangular area.
+                    <br>
+                    Left-drag a vertex or selected vertices to move them.
+                    Shift+left-drag selected vertices to rotate them.
+                    Ctrl+left-click to reflect across the y-axis, Ctrl+right-click to reflect across their x-axis.
+                </p>
+                <p>
+                    Orange nodes can accept a new token.
+                    <br>
+                    Tokens on green nodes can move, tokens on red nodes cannot move.
+                </p>
+                <p>
+                    Ctrl+left-click a vertex to create a token, do it again to remove it.
+                    <br>
+                    Left-click a token to see legal moves, do it again to hide them.
+                </p>
+                <p>
+                    Ctrl+Z to undo up to 5 previous actions.
+                </p>
+            </div>
+        </details>
+    </header>
 
     <div id="status"></div>
 
-    <div id="controls">
-        <label>
-            <strong>Problem:</strong>
-            <select id="problemSelect"></select>
-        </label>
-        <label>
-            <strong>Scenario:</strong>
-            <select id="scenarioSelect"></select>
-        </label>
-        <label>
-            <strong>Layout:</strong>
-            <select id="layoutSelect">
-                <option value="circular">Circular</option>
-                <option value="tree">Tree</option>
-                <option value="grid">Grid</option>
-                <option value="horizontal">Horizontal</option>
-                <option value="vertical">Vertical</option>
-                <option value="spiral">Spiral</option>
-            </select>
-        </label>
-        <label>
-            <strong id="parameterLabel">p:</strong>
-            <input type="number" id="parameterValue" value="2" min="0" max="10">
-            <span id="parameterDescription"></span>
-        </label>
-        <label>
-            <input type="checkbox" id="repulsionToggle">
-            <strong>Repulsive force</strong>
-        </label>
-        <label>
-            <input type="checkbox" id="neighborhoodCountToggle">
-            <strong>Token numbers</strong>
-        </label>
-        <label>
-            <input type="checkbox" id="moveDirectionToggle">
-            <strong>Token moves</strong>
-        </label>
-        <div class="selection-actions">
-            <button type="button" id="clearSelectionButton">Clear</button>
-            <span class="separator"></span>
-            <button type="button" id="copySelectionButton">Copy</button>
-            <button type="button" id="pasteSelectionButton">Paste</button>
-            <span class="separator"></span>
-            <button type="button" id="saveSelectionButton">Save</button>
-            <button type="button" id="importSelectionButton">Load</button>
-            <span class="separator"></span>
-            <button type="button" id="deleteSelectionButton">Delete</button>
+    <main class="workspace">
+        <div id="controls">
+            <section class="control-group problem-group">
+                <div class="group-heading">
+                    <span class="group-kicker">Model</span>
+                    <span class="group-title">Problem setup</span>
+                </div>
+                <label class="control-field">
+                    <span>Problem</span>
+                    <select id="problemSelect"></select>
+                </label>
+                <label class="parameter-field">
+                    <span class="parameter-heading"><strong id="parameterLabel"></strong><span
+                            id="parameterDescription"></span></span>
+                    <input type="number" id="parameterValue" value="2" min="0" max="10">
+                </label>
+                <label class="control-field">
+                    <span>Scenario</span>
+                    <select id="scenarioSelect"></select>
+                </label>
+            </section>
+
+            <section class="control-group view-group">
+                <div class="group-heading">
+                    <span class="group-kicker">Canvas</span>
+                    <span class="group-title">View</span>
+                </div>
+                <label class="control-field">
+                    <span>Layout</span>
+                    <select id="layoutSelect">
+                        <option value="circular">Circular</option>
+                        <option value="tree">Tree</option>
+                        <option value="grid">Grid</option>
+                        <option value="horizontal">Horizontal</option>
+                        <option value="vertical">Vertical</option>
+                        <option value="spiral">Spiral</option>
+                    </select>
+                </label>
+                <label class="toggle-field">
+                    <input type="checkbox" id="repulsionToggle">
+                    <span>Repulsive force</span>
+                </label>
+                <label class="toggle-field">
+                    <input type="checkbox" id="neighborhoodCountToggle">
+                    <span>Token numbers</span>
+                </label>
+                <label class="toggle-field">
+                    <input type="checkbox" id="moveDirectionToggle">
+                    <span>Token moves</span>
+                </label>
+            </section>
+
+            <section class="control-group selection-group">
+                <div class="group-heading">
+                    <span class="group-kicker">Edit</span>
+                    <span class="group-title">Selection</span>
+                </div>
+                <div class="selection-actions">
+                    <button type="button" id="clearSelectionButton">Clear</button>
+                    <button type="button" id="deleteSelectionButton" class="danger-action">Delete</button>
+                    <button type="button" id="copySelectionButton">Copy</button>
+                    <button type="button" id="saveSelectionButton">Save</button>
+                    <button type="button" id="pasteSelectionButton">Paste</button>
+                    <button type="button" id="importSelectionButton">Load</button>
+                </div>
+            </section>
         </div>
-    </div>
+
+        <div class="canvas-frame">
+            <div class="canvas-caption"><span>Live graph</span><span>View and edit the graph, move tokens around</span></div>
+            <svg width="1400" height="800"></svg>
+        </div>
+    </main>
 
     <input id="selectionImportInput" type="file" accept="application/json" hidden>
-
-    <svg width="1400" height="800"></svg>
 
     <script type="module" src="/src/main.ts"></script>
 </body>
