@@ -218,6 +218,12 @@ h1 {
     accent-color: var(--accent);
 }
 
+.toggle-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
 .mode-toggle {
     display: inline-flex;
     gap: 2px;
@@ -298,10 +304,30 @@ h1 {
     font-weight: 600;
 }
 
+.canvas-caption-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.touchscreen-options {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.touchscreen-label {
+    color: var(--ink);
+    font-weight: 600;
+    font-size: 0.78rem;
+}
+
 svg {
     display: block;
     width: 100%;
-    height: clamp(900px, 72vh, 800px);
+    height: clamp(420px, 72vh, 960px);
     background: white;
     border: 1px solid #edf1f0;
     cursor: grab;
@@ -368,6 +394,14 @@ svg:active {
 
 .node.frozen {
     fill: #F44336;
+}
+
+/* Colors off (play mode): hide the mobile/frozen hints, render token slots
+   neutrally like empty ones. The .selectable/.selected strokes still apply
+   (different property, and they come later anyway). */
+.node.colors-off.mobile,
+.node.colors-off.frozen {
+    fill: #d7dce3;
 }
 
 .node.selectable {

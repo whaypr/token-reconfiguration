@@ -155,6 +155,9 @@ export function createPFairnessApp({
 
     let interactionMode: InteractionMode = "tokens";
     let pendingEdgeSourceId: NodeId | null = null;
+    // Off = tokens graph is a puzzle: colours that hint where tokens can move
+    // or go hide behind the neutral .empty fill. Movement rules still apply.
+    let colorsEnabled = true;
 
     const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.15, 3])
@@ -732,7 +735,7 @@ export function createPFairnessApp({
 
                 if (!token) {
                     classes.push("empty");
-                    if (graph.canPlaceTokenAtNode(d.id)) {
+                    if (colorsEnabled && graph.canPlaceTokenAtNode(d.id)) {
                         classes.push("placeable");
                     }
                 } else if (isTokenFrozen(token.id)) {
@@ -747,6 +750,10 @@ export function createPFairnessApp({
 
                 if (legalMoveTargets.has(d.id)) {
                     classes.push("selectable");
+                }
+
+                if (!colorsEnabled) {
+                    classes.push("colors-off");
                 }
 
                 return classes.join(" ");
@@ -1149,9 +1156,15 @@ export function createPFairnessApp({
         }
     }
 
+    function setColorsEnabled(enabled: boolean): void {
+        colorsEnabled = enabled;
+        updateNodeClasses();
+    }
+
     return {
         setStatus,
         setInteractionMode,
+        setColorsEnabled,
         setRepulsionEnabled,
         setNeighborhoodCountVisibility,
         setMoveDirectionVisibility,

@@ -99,6 +99,7 @@ export interface PFairnessAppConfig {
 export interface PFairnessApp {
     setStatus(message: string): void;
     setInteractionMode(mode: InteractionMode): void;
+    setColorsEnabled(enabled: boolean): void;
     setRepulsionEnabled(enabled: boolean): void;
     setNeighborhoodCountVisibility(enabled: boolean): void;
     setMoveDirectionVisibility(enabled: boolean): void;

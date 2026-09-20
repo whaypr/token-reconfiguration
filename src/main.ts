@@ -12,6 +12,7 @@ function bootstrap(): void {
     const repulsionToggle = document.getElementById("repulsionToggle") as HTMLInputElement;
     const neighborhoodCountToggle = document.getElementById("neighborhoodCountToggle") as HTMLInputElement;
     const moveDirectionToggle = document.getElementById("moveDirectionToggle") as HTMLInputElement;
+    const colorsToggle = document.getElementById("colorsToggle") as HTMLInputElement;
     const modeTokensButton = document.getElementById("modeTokensButton") as HTMLButtonElement;
     const modeGraphButton = document.getElementById("modeGraphButton") as HTMLButtonElement;
     const copySelectionButton = document.getElementById("copySelectionButton") as HTMLButtonElement;
@@ -22,7 +23,7 @@ function bootstrap(): void {
     const deleteSelectionButton = document.getElementById("deleteSelectionButton") as HTMLButtonElement;
     const selectionImportInput = document.getElementById("selectionImportInput") as HTMLInputElement;
 
-    if (!scenarioSelect || !problemSelect || !parameterLabel || !parameterDescription || !layoutSelect || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !modeTokensButton || !modeGraphButton || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0 || problems.length === 0) {
+    if (!scenarioSelect || !problemSelect || !parameterLabel || !parameterDescription || !layoutSelect || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !colorsToggle || !modeTokensButton || !modeGraphButton || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0 || problems.length === 0) {
         window.setTimeout(bootstrap, 0);
         return;
     }
@@ -49,6 +50,10 @@ function bootstrap(): void {
         currentApp?.setInteractionMode(mode);
     }
 
+    function applyDisableColors(disabled: boolean): void {
+        currentApp?.setColorsEnabled(!disabled);
+    }
+
     function applyControlsToApp(): void {
         if (!currentApp) {
             return;
@@ -59,6 +64,7 @@ function bootstrap(): void {
         currentApp.setNeighborhoodCountVisibility(neighborhoodCountToggle.checked);
         currentApp.setMoveDirectionVisibility(moveDirectionToggle.checked);
         currentApp.setInteractionMode(interactionMode);
+        currentApp.setColorsEnabled(!colorsToggle.checked);
     }
 
     function renderScenarioOptions(): void {
@@ -136,6 +142,10 @@ function bootstrap(): void {
         }
     });
 
+    colorsToggle.addEventListener("change", () => {
+        applyDisableColors(colorsToggle.checked);
+    });
+
     modeTokensButton.addEventListener("click", () => {
         applyInteractionMode("tokens");
     });
@@ -208,6 +218,7 @@ function bootstrap(): void {
     repulsionToggle.checked = false;
     neighborhoodCountToggle.checked = false;
     moveDirectionToggle.checked = false;
+    colorsToggle.checked = false;
     loadScenario(0);
 }
 
