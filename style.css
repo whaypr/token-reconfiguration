@@ -301,7 +301,7 @@ h1 {
 svg {
     display: block;
     width: 100%;
-    height: clamp(340px, 55vh, 800px);
+    height: clamp(900px, 72vh, 800px);
     background: white;
     border: 1px solid #edf1f0;
     cursor: grab;
