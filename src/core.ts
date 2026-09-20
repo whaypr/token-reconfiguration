@@ -8,9 +8,11 @@ import type {
     GraphToken,
     NodeId,
     LayoutMode,
+    InteractionMode,
     PFairnessApp,
     PFairnessAppConfig,
 } from "./types";
+import { createTouchGestures, TOUCH_HIT_RADIUS_PX } from "./touch-gestures";
 import { applyGraphLayout } from "./layouts";
 import { createGraph } from "./graph-factory";
 import { createGraphInteractions } from "./graph-interactions";
@@ -61,8 +63,6 @@ export function createPFairnessApp({
     problem,
 }: PFairnessAppConfig): PFairnessApp {
     const svg = d3.select(svgSelector) as unknown as SvgSelection;
-    const width = Number(svg.attr("width"));
-    const height = Number(svg.attr("height"));
     const pInput = document.querySelector(parameterInputSelector) as HTMLInputElement;
     const statusElement = document.querySelector(statusSelector) as HTMLElement;
 
@@ -70,7 +70,15 @@ export function createPFairnessApp({
         throw new Error("p-Fairness app root elements were not found.");
     }
 
+    // The canvas owns its own touches (pan/zoom/edit are all manual);
+    // everything outside the canvas stays scrollable on a phone.
     svg.style("touch-action", "none");
+
+    // The SVG's width/height ARE its user units (there is no viewBox), so they
+    // are kept equal to its rendered box — that makes 1 graph unit ≈ 1 CSS px
+    // on a phone, which is what turns vertex r=20 into a ~40 px tap target.
+    let width = 0;
+    let height = 0;
 
     const graph = createGraph(nodes, links, initialTokens, initialParameter, problem.rules, width, height);
 
@@ -88,7 +96,7 @@ export function createPFairnessApp({
     const undoStack: AppUndoSnapshot[] = [];
     let undoGroupDepth = 0;
 
-    const defaultStatusMessage = "Select a token to see legal moves. Middle-click empty space to add a node, middle-click a node to remove it, right-drag from a vertex to create an edge, and left-drag the background to pan.";
+    const defaultStatusMessage = "Tap a token to see its legal moves, then tap a highlighted vertex to move it. Toggle the ✎ Edit button to edit the graph by hand.";
 
     const background = svg.append("rect")
         .attr("class", "graph-background")
@@ -108,6 +116,14 @@ export function createPFairnessApp({
         .style("display", "none");
     const selectionPreview = interactionLayer.append("rect")
         .attr("class", "selection-preview")
+        .style("display", "none");
+    // Dashed ring marking the vertex a tap committed as an edge source. It is
+    // shown/hidden here, never via the node's class attribute, so
+    // updateNodeClasses cannot wipe it and setOverlayRefreshPaused cannot
+    // delete it either (overlay children ARE removed there).
+    const pendingEdgeHalo = interactionLayer.append("circle")
+        .attr("class", "pending-edge-source")
+        .attr("r", 26)
         .style("display", "none");
 
     function setStatus(message: string): void {
@@ -137,9 +153,21 @@ export function createPFairnessApp({
         .force("collide", null)
         .force("center", null);
 
+    let interactionMode: InteractionMode = "tokens";
+    let pendingEdgeSourceId: NodeId | null = null;
+
     const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.15, 3])
-        .filter((event: MouseEvent | WheelEvent) => event.type === "wheel" || (event.type === "mousedown" && event.button === 0) || event.type === "dblclick")
+        .filter((event: MouseEvent | WheelEvent | TouchEvent) => {
+            // One- and two-finger touches start gestures of their own (the
+            // recogniser decides who truly owns a touch), three fingers do
+            // not. The mode never matters here: pan/pinch belong to the
+            // viewport in BOTH modes.
+            if (event.type.startsWith("touch")) {
+                return (event as TouchEvent).touches.length <= 2;
+            }
+            return event.type === "wheel" || (event.type === "mousedown" && (event as MouseEvent).button === 0) || event.type === "dblclick";
+        })
         .on("zoom", (event: D3ZoomEvent<SVGSVGElement, unknown>) => {
             currentTransform = event.transform;
             graphViewport.attr("transform", currentTransform.toString());
@@ -147,7 +175,6 @@ export function createPFairnessApp({
 
     const interactions = createGraphInteractions({
         svg,
-        backgroundNode: background.node() as SVGRectElement,
         edgePreview,
         selectionPreview,
         simulation,
@@ -253,7 +280,11 @@ export function createPFairnessApp({
     }
 
     function getNodeAtPoint(x: number, y: number, ignoredNodeId: NodeId | null = null): GraphNode | null {
-        const matchRadius = 22;
+        // Hit radius in SCREEN pixels, expressed back in graph units so picking
+        // stays equally forgiving at every zoom level. The mouse uses the same
+        // path, which makes middle/right-click hit-testing generous on
+        // purpose.
+        const matchRadius = Math.max(22, TOUCH_HIT_RADIUS_PX / currentTransform.k);
         let closestNode: GraphNode | null = null;
         let closestDistance = Infinity;
 
@@ -274,6 +305,151 @@ export function createPFairnessApp({
 
         return closestDistance <= matchRadius ? closestNode : null;
     }
+
+    // ---- Touch verbs (wired to touch-gestures.ts below) -----------------
+    //
+    // The recogniser handles all timing/tolerance. These functions only
+    // decide what a tap/hold/empty-tap MEANS in the current mode. The mouse
+    // never goes through them.
+
+    function showPendingEdgeSource(nodeId: NodeId): void {
+        const nodeData = getNodeById(nodeId);
+        if (!nodeData) {
+            return;
+        }
+        pendingEdgeHalo.style("display", null).attr("cx", nodeData.x).attr("cy", nodeData.y);
+    }
+
+    function clearPendingEdgeSource(): void {
+        pendingEdgeSourceId = null;
+        pendingEdgeHalo.style("display", "none");
+    }
+
+    function tryToggleEdge(sourceId: NodeId, targetId: NodeId): void {
+        if (removeEdge(sourceId, targetId)) {
+            refreshGraphAfterMutation(`Edge between nodes ${sourceId} and ${targetId} removed.`);
+        } else if (addEdge(sourceId, targetId)) {
+            refreshGraphAfterMutation(`Edge added between nodes ${sourceId} and ${targetId}.`);
+        } else {
+            setStatus(`Edge between nodes ${sourceId} and ${targetId} would violate the current problem constraints, so it was blocked.`);
+        }
+    }
+
+    function handleTouchTapNode(nodeId: NodeId): void {
+        if (interactionMode === "tokens") {
+            const token = graph.getTokenAtNode(nodeId);
+            if (selectedTokenId) {
+                handleNodeClick(nodeId);
+                return;
+            }
+            if (token) {
+                selectToken(token.id);
+                return;
+            }
+            setStatus("That vertex is empty. Hold it to add a token; tap a vertex with a token to see its legal moves.");
+            return;
+        }
+
+        // Graph mode: tapping a vertex walks the edge-editing verb —
+        // first tap arms the source, next tap on another vertex toggles
+        // that edge.
+        if (pendingEdgeSourceId === null) {
+            pendingEdgeSourceId = nodeId;
+            showPendingEdgeSource(nodeId);
+            setStatus(`Vertex ${nodeId} selected as the edge source. Tap another vertex to add/remove the edge, or tap it again to cancel.`);
+            return;
+        }
+        if (pendingEdgeSourceId === nodeId) {
+            clearPendingEdgeSource();
+            setStatus("Edge source cancelled.");
+            return;
+        }
+        tryToggleEdge(pendingEdgeSourceId, nodeId);
+        clearPendingEdgeSource();
+    }
+
+    function handleTouchHoldNode(nodeId: NodeId): void {
+        if (navigator.vibrate) {
+            navigator.vibrate(15);
+        }
+
+        if (interactionMode === "tokens") {
+            // Hold toggles: add a token, or remove the one already there.
+            if (graph.getTokenAtNode(nodeId)) {
+                deleteTokenAtNode(nodeId);
+                return;
+            }
+            if (!addTokenAtNode(nodeId)) {
+                setStatus(`A token cannot stand on node ${nodeId} — it would violate the ${problem.name} rule.`);
+            }
+            return;
+        }
+
+        // Graph mode: the deliberate verb — delete the vertex.
+        clearPendingEdgeSource();
+        if (removeNode(nodeId)) {
+            refreshGraphAfterMutation(`Node ${nodeId} removed.`);
+        }
+    }
+
+    function handleTouchTapEmpty(graphX: number, graphY: number): void {
+        if (interactionMode === "tokens") {
+            // On the desktop this is the background's click handler; the tap
+            // must not silently lose it.
+            clearTokenMoveSelection();
+            return;
+        }
+
+        // Graph mode: tap empty space -> a new isolated vertex. An armed edge
+        // source is not cancelled by a stray tap near a vertex.
+        addNodeAtPoint(graphX, graphY);
+        refreshGraphAfterMutation();
+    }
+
+    const touchGestures = createTouchGestures({
+        svgNode: svg.node() as SVGSVGElement,
+        callbacks: {
+            onTapNode: handleTouchTapNode,
+            onTapEmpty: handleTouchTapEmpty,
+            onLongPressNode: handleTouchHoldNode,
+            onDragNode: nodeId => ({
+                onMove: (_id, x, y) => {
+                    const nodeData = getNodeById(nodeId);
+                    if (nodeData) {
+                        nodeData.fx = x;
+                        nodeData.fy = y;
+                        nodeData.x = x;
+                        nodeData.y = y;
+                        nodeData.anchorX = x;
+                        nodeData.anchorY = y;
+                    }
+                },
+                onEnd: finishedNodeId => {
+                    setStatus(`Node ${finishedNodeId} moved.`);
+                },
+            }),
+        },
+        isTouchEditMode: () => interactionMode === "graph",
+        isZooming: () => Boolean((svg.node() as SVGSVGElement & { __zooming?: unknown }).__zooming),
+        isRepulsionEnabled: () => repulsionEnabled,
+        getNodeAtPoint,
+        getNodeById: nodeId => getNodeById(nodeId),
+        currentTransform: () => currentTransform,
+        recordUndoState,
+        positionGraphElements,
+        setOverlayRefreshPaused: paused => {
+            overlayRefreshPaused = paused;
+            if (paused) {
+                neighborhoodCountLayer.selectAll<SVGTextElement, GraphNode>(".neighborhood-count").remove();
+                moveDirectionLayer.selectAll<SVGLineElement, { key: string; x1: number; y1: number; x2: number; y2: number }>(".move-direction-hint").remove();
+                return;
+            }
+            refreshOverlayState();
+        },
+        setAlphaTarget: alpha => {
+            simulation.alphaTarget(alpha).restart();
+        },
+    });
 
     function addNodeAtPoint(x: number, y: number): GraphNode {
         recordUndoState();
@@ -533,6 +709,13 @@ export function createPFairnessApp({
             .attr("cx", d => d.x)
             .attr("cy", d => d.y);
 
+        if (pendingEdgeSourceId !== null) {
+            const sourceNode = getNodeById(pendingEdgeSourceId);
+            if (sourceNode) {
+                pendingEdgeHalo.attr("cx", sourceNode.x).attr("cy", sourceNode.y);
+            }
+        }
+
         positionTokens();
         refreshOverlayState();
     }
@@ -591,6 +774,15 @@ export function createPFairnessApp({
             .attr("r", 10)
             .call(interactions.tokenDrag)
             .on("click", (event: MouseEvent, d: GraphToken) => {
+                // One handler only — a second .on("click") on the same
+                // selection would silently replace this one.
+                if (event.ctrlKey) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    deleteTokenAtNode(d.nodeId);
+                    return;
+                }
+
                 event.stopPropagation();
                 selectToken(d.id);
             })
@@ -607,18 +799,7 @@ export function createPFairnessApp({
 
                 interactions.handleNodeMouseDown(event, nodeData);
             })
-            .on("contextmenu", (event: MouseEvent) => event.preventDefault())
-            .on("click", (event: MouseEvent, d: GraphToken) => {
-                if (event.ctrlKey) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    deleteTokenAtNode(d.nodeId);
-                    return;
-                }
-
-                event.stopPropagation();
-                selectToken(d.id);
-            });
+            .on("contextmenu", (event: MouseEvent) => event.preventDefault());
 
         positionTokens();
         updateTokenClasses();
@@ -654,6 +835,10 @@ export function createPFairnessApp({
         recordUndoState();
         const tokenOnNode = graph.getTokenAtNode(nodeId);
         graph.removeNode(nodeId);
+
+        if (pendingEdgeSourceId === nodeId) {
+            clearPendingEdgeSource();
+        }
 
         if (tokenOnNode && selectedTokenId === tokenOnNode.id) {
             selectedTokenId = null;
@@ -704,6 +889,13 @@ export function createPFairnessApp({
 
         background
             .on("mousedown", interactions.handleBackgroundMouseDown)
+            .on("dblclick", (event: MouseEvent) => {
+                // Block the double-tap-zoom that d3-zoom wires on the svg root.
+                // stopPropagation (not just stopImmediatePropagation) prevents the
+                // event from ever reaching the svg-level "dblclick.zoom" handler.
+                event.stopPropagation();
+                event.preventDefault();
+            })
             .on("click", (event: MouseEvent) => {
                 if (event.button === 0 && !event.ctrlKey && !event.shiftKey && !event.altKey) {
                     clearTokenMoveSelection();
@@ -889,6 +1081,9 @@ export function createPFairnessApp({
         parameter = snapshot.graph.parameter;
         pInput.value = String(snapshot.graph.parameter);
         selectedTokenId = snapshot.selectedTokenId;
+        // An armed edge source could silently point at a different vertex after
+        // the restore — drop it instead of guessing.
+        clearPendingEdgeSource();
         selection.restoreSnapshot(snapshot.selection);
         refreshTokenMoveSelectionState();
         refreshOverlayState();
@@ -899,16 +1094,64 @@ export function createPFairnessApp({
     pInput.value = String(parameter);
     pInput.addEventListener("change", handlePChange);
     svg.call(zoomBehavior);
+    // Double-tap zoom off in every mode — and background's own "dblclick"
+    // handler cannot stop it once the background rect has been panned off,
+    // so remove it here, not just there. It also kills d3-zoom rerouting a
+    // double TAP into the same handler.
+    svg.on("dblclick.zoom", null);
     svg.on("contextmenu", (event: MouseEvent) => event.preventDefault());
 
+    // Match the svg's user units to its rendered box (see the width/height
+    // declaration): ResizeObserver keeps them in sync across orientation
+    // changes and desktop resizes alike.
+    let canvasResizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+        canvasResizeObserver = new ResizeObserver(() => syncCanvasSize());
+        canvasResizeObserver.observe(svg.node() as SVGSVGElement);
+    }
+
+    function syncCanvasSize(): void {
+        const rect = (svg.node() as SVGSVGElement).getBoundingClientRect();
+        if (rect.width < 60 || rect.height < 60) {
+            return;
+        }
+        // Graph positions are computed against width/height, so a real change
+        // (phone shows ~370x500, desktop ~1200x800) must also relayout, or
+        // every vertex silently lives outside the visible canvas and taps
+        // land on empty space.
+        const sizeChanged = Math.abs(rect.width - width) > 1 || Math.abs(rect.height - height) > 1;
+        width = rect.width;
+        height = rect.height;
+        svg.attr("width", width).attr("height", height);
+        background.attr("width", width).attr("height", height);
+        syncSimulation();
+        if (sizeChanged && typeof applyLayout === "function") {
+            applyLayout(currentLayout);
+        }
+    }
+
+    syncCanvasSize();
     simulation.on("tick", positionGraphElements);
 
     refreshGraphAfterMutation();
     applyLayout(currentLayout);
     clearTokenMoveSelection();
 
+    function setInteractionMode(mode: InteractionMode): void {
+        interactionMode = mode;
+        clearPendingEdgeSource();
+        clearTokenMoveSelection();
+
+        if (mode === "graph") {
+            setStatus("Graph mode: tap a vertex to start an edge, then tap another vertex to add/remove it. Tap empty space to add a vertex, hold a vertex to delete it, drag a vertex to move it. One finger pans, two fingers zoom.");
+        } else {
+            setStatus(defaultStatusMessage);
+        }
+    }
+
     return {
         setStatus,
+        setInteractionMode,
         setRepulsionEnabled,
         setNeighborhoodCountVisibility,
         setMoveDirectionVisibility,
@@ -924,6 +1167,10 @@ export function createPFairnessApp({
         importSelection,
         destroy() {
             simulation.stop();
+            if (canvasResizeObserver) {
+                canvasResizeObserver.disconnect();
+            }
+            touchGestures.destroy();
             pInput.removeEventListener("change", handlePChange);
             svg.on(".zoom", null);
             svg.on("contextmenu", null);

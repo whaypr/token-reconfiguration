@@ -7,6 +7,19 @@ import type { GraphNode, NodeId } from "./types";
 
 type ForceNodeDatum = GraphNode & SimulationNodeDatum;
 
+// d3-drag exposes a DragEvent whose underlying source event is the raw event
+// it observed. On touch devices that is a TouchEvent (no direct clientX/Y),
+// while the per-touch coordinates live on each Touch. d3.pointer expects an
+// event (or Touch) that carries coordinates directly, so we resolve the
+// active Touch before converting a position.
+export function resolvePointerEvent(event: MouseEvent | TouchEvent): MouseEvent | Touch {
+    if (!("changedTouches" in event) || event.changedTouches.length === 0) {
+        return event as MouseEvent;
+    }
+
+    return event.changedTouches[0];
+}
+
 type SelectionBoxState = {
     x1: number;
     y1: number;
@@ -62,7 +75,7 @@ export class SelectionGestureManager {
         const selectedNodeIds = this.context.getSelectedNodeIds();
 
         if (selectedNodeIds.length > 1 && selectedNodeIds.includes(nodeData.id)) {
-            const [pointerX, pointerY] = this.toGraphPoint(event.sourceEvent as MouseEvent | PointerEvent);
+            const [pointerX, pointerY] = this.toGraphPoint(resolvePointerEvent(event.sourceEvent as MouseEvent | TouchEvent));
             this.beginSelectionDrag(event.sourceEvent.shiftKey ? "rotate" : "move", pointerX, pointerY);
             return;
         }
@@ -74,12 +87,12 @@ export class SelectionGestureManager {
 
     handleNodeDragged(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>, nodeData: ForceNodeDatum): void {
         if (this.selectionDragState) {
-            const [pointerX, pointerY] = this.toGraphPoint(event.sourceEvent as MouseEvent | PointerEvent);
+            const [pointerX, pointerY] = this.toGraphPoint(resolvePointerEvent(event.sourceEvent as MouseEvent | TouchEvent));
             this.updateSelectionDrag(pointerX, pointerY);
             return;
         }
 
-        const [x, y] = this.toGraphPoint(event.sourceEvent as MouseEvent | PointerEvent);
+        const [x, y] = this.toGraphPoint(resolvePointerEvent(event.sourceEvent as MouseEvent | TouchEvent));
         nodeData.fx = x;
         nodeData.fy = y;
         nodeData.anchorX = x;
@@ -129,8 +142,9 @@ export class SelectionGestureManager {
         this.selectionDragState = null;
     }
 
-    private toGraphPoint(event: MouseEvent | PointerEvent | D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>): [number, number] {
-        const [x, y] = d3.pointer(event, this.context.svg.node());
+    private toGraphPoint(event: MouseEvent | Touch | D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>): [number, number] {
+        const sourceEvent = "sourceEvent" in event ? (event as D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>).sourceEvent : event;
+        const [x, y] = d3.pointer(resolvePointerEvent(sourceEvent as MouseEvent | TouchEvent), this.context.svg.node());
         return this.context.currentTransform().invert([x, y]);
     }
 

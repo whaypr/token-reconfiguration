@@ -218,6 +218,33 @@ h1 {
     accent-color: var(--accent);
 }
 
+.mode-toggle {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel);
+}
+
+.mode-button {
+    padding: 7px 16px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    min-height: 34px;
+}
+
+.mode-button.active {
+    background: var(--ink);
+    color: var(--panel);
+}
+
 .selection-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -252,13 +279,21 @@ h1 {
 .canvas-caption {
     display: flex;
     justify-content: space-between;
+    align-items: center;
     gap: 12px;
     padding: 2px 4px 10px;
     color: var(--muted);
     font-size: 0.72rem;
 }
 
-.canvas-caption span:first-child {
+.canvas-caption-text {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex: 1;
+}
+
+.canvas-caption-text span:first-child {
     color: var(--ink);
     font-weight: 600;
 }
@@ -266,14 +301,28 @@ h1 {
 svg {
     display: block;
     width: 100%;
-    height: auto;
+    height: clamp(340px, 55vh, 800px);
     background: white;
     border: 1px solid #edf1f0;
     cursor: grab;
+    /* The canvas owns its own touches (pan/zoom/edit are manual); everything
+       outside the canvas stays scrollable on a phone. */
+    touch-action: none;
 }
 
 svg:active {
     cursor: grabbing;
+}
+
+/* d3-drag used to put these on the circles when it claimed touches; it no
+   longer does (touch lives in touch-gestures.ts), so the rules move here. */
+/* d3-drag used to put this on the circles when it claimed touches; it no
+   longer does (touch lives in touch-gestures.ts), so it moves here. Note
+   touch-action intentionally stays OFF the circles: per-element
+   touch-action:none makes the browser capture the touch to that element
+   instead of the svg, breaking our capture-phase svg handlers. */
+.node, .token {
+    -webkit-tap-highlight-color: transparent;
 }
 
 .graph-background {
@@ -362,6 +411,16 @@ svg:active {
     pointer-events: none;
 }
 
+/* Vertex tapped as an edge source, waiting for the second tap. Kept off the
+   node's class attribute so updateNodeClasses cannot wipe it. */
+.pending-edge-source {
+    fill: none;
+    stroke: #2563eb;
+    stroke-width: 3px;
+    stroke-dasharray: 7 5;
+    pointer-events: none;
+}
+
 .token {
     fill: #FFC107;
     stroke: #333;
@@ -415,6 +474,16 @@ svg:active {
     }
 
     .canvas-caption {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+
+    .mode-toggle {
+        align-self: flex-start;
+    }
+
+    .canvas-caption-text {
         flex-direction: column;
         gap: 3px;
     }

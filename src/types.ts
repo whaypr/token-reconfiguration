@@ -1,6 +1,10 @@
 export type NodeId = number | string;
 export type LayoutMode = "circular" | "tree" | "grid" | "horizontal" | "vertical" | "spiral";
 
+// Which verb a touch means on the canvas. The mouse never consults this:
+// every desktop gesture works in both modes.
+export type InteractionMode = "tokens" | "graph";
+
 export interface ScenarioNodeInput {
     id: NodeId;
     x?: number;
@@ -94,6 +98,7 @@ export interface PFairnessAppConfig {
 
 export interface PFairnessApp {
     setStatus(message: string): void;
+    setInteractionMode(mode: InteractionMode): void;
     setRepulsionEnabled(enabled: boolean): void;
     setNeighborhoodCountVisibility(enabled: boolean): void;
     setMoveDirectionVisibility(enabled: boolean): void;

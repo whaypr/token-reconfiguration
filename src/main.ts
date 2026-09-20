@@ -1,7 +1,7 @@
 import { createPFairnessApp } from "./core";
 import { problems } from "./problems";
 import { scenarios } from "./scenarios";
-import type { LayoutMode, PFairnessApp } from "./types";
+import type { InteractionMode, LayoutMode, PFairnessApp } from "./types";
 
 function bootstrap(): void {
     const scenarioSelect = document.getElementById("scenarioSelect") as HTMLSelectElement;
@@ -12,6 +12,8 @@ function bootstrap(): void {
     const repulsionToggle = document.getElementById("repulsionToggle") as HTMLInputElement;
     const neighborhoodCountToggle = document.getElementById("neighborhoodCountToggle") as HTMLInputElement;
     const moveDirectionToggle = document.getElementById("moveDirectionToggle") as HTMLInputElement;
+    const modeTokensButton = document.getElementById("modeTokensButton") as HTMLButtonElement;
+    const modeGraphButton = document.getElementById("modeGraphButton") as HTMLButtonElement;
     const copySelectionButton = document.getElementById("copySelectionButton") as HTMLButtonElement;
     const pasteSelectionButton = document.getElementById("pasteSelectionButton") as HTMLButtonElement;
     const saveSelectionButton = document.getElementById("saveSelectionButton") as HTMLButtonElement;
@@ -20,13 +22,14 @@ function bootstrap(): void {
     const deleteSelectionButton = document.getElementById("deleteSelectionButton") as HTMLButtonElement;
     const selectionImportInput = document.getElementById("selectionImportInput") as HTMLInputElement;
 
-    if (!scenarioSelect || !problemSelect || !parameterLabel || !parameterDescription || !layoutSelect || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0 || problems.length === 0) {
+    if (!scenarioSelect || !problemSelect || !parameterLabel || !parameterDescription || !layoutSelect || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !modeTokensButton || !modeGraphButton || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0 || problems.length === 0) {
         window.setTimeout(bootstrap, 0);
         return;
     }
 
     let currentApp: PFairnessApp | null = null;
     let currentProblem = problems[0];
+    let interactionMode: InteractionMode = "tokens";
 
     function renderProblem(problem = currentProblem): void {
         parameterLabel.textContent = `${problem.parameterLabel}`;
@@ -35,6 +38,15 @@ function bootstrap(): void {
         parameterInput.min = String(problem.minParameter);
         parameterInput.max = String(problem.maxParameter);
         parameterInput.step = String(problem.parameterStep);
+    }
+
+    function applyInteractionMode(mode: InteractionMode): void {
+        interactionMode = mode;
+        modeTokensButton.classList.toggle("active", mode === "tokens");
+        modeGraphButton.classList.toggle("active", mode === "graph");
+        modeTokensButton.setAttribute("aria-pressed", String(mode === "tokens"));
+        modeGraphButton.setAttribute("aria-pressed", String(mode === "graph"));
+        currentApp?.setInteractionMode(mode);
     }
 
     function applyControlsToApp(): void {
@@ -46,6 +58,7 @@ function bootstrap(): void {
         currentApp.setRepulsionEnabled(repulsionToggle.checked);
         currentApp.setNeighborhoodCountVisibility(neighborhoodCountToggle.checked);
         currentApp.setMoveDirectionVisibility(moveDirectionToggle.checked);
+        currentApp.setInteractionMode(interactionMode);
     }
 
     function renderScenarioOptions(): void {
@@ -121,6 +134,14 @@ function bootstrap(): void {
         if (currentApp) {
             currentApp.setMoveDirectionVisibility(moveDirectionToggle.checked);
         }
+    });
+
+    modeTokensButton.addEventListener("click", () => {
+        applyInteractionMode("tokens");
+    });
+
+    modeGraphButton.addEventListener("click", () => {
+        applyInteractionMode("graph");
     });
 
     copySelectionButton.addEventListener("click", () => {

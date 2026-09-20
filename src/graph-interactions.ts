@@ -4,7 +4,7 @@ import type { Selection } from "d3-selection";
 import type { Simulation, SimulationNodeDatum } from "d3-force";
 import type { ZoomTransform } from "d3-zoom";
 import type { GraphNode, GraphToken, NodeId } from "./types";
-import { SelectionGestureManager } from "./selection-gestures";
+import { resolvePointerEvent, SelectionGestureManager } from "./selection-gestures";
 
 type ForceNodeDatum = GraphNode & SimulationNodeDatum;
 
@@ -18,7 +18,6 @@ type EdgeDragState = {
 
 interface GraphInteractionContext {
     svg: Selection<SVGSVGElement, unknown, null, undefined>;
-    backgroundNode: SVGRectElement;
     edgePreview: Selection<SVGLineElement, unknown, null, undefined>;
     selectionPreview: Selection<SVGRectElement, unknown, null, undefined>;
     simulation: Simulation<ForceNodeDatum, undefined>;
@@ -57,9 +56,10 @@ export interface GraphInteractionController {
 function toGraphPoint(
     svg: Selection<SVGSVGElement, unknown, null, undefined>,
     currentTransform: () => ZoomTransform,
-    event: MouseEvent | PointerEvent | D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>,
+    event: MouseEvent | D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>,
 ): [number, number] {
-    const [x, y] = d3.pointer(event, svg.node());
+    const sourceEvent = "sourceEvent" in event ? (event as D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>).sourceEvent : event;
+    const [x, y] = d3.pointer(resolvePointerEvent(sourceEvent as MouseEvent | TouchEvent), svg.node());
     return currentTransform().invert([x, y]);
 }
 
@@ -112,15 +112,53 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
     }
 
     function handleWindowMouseMove(event: MouseEvent): void {
-        const pointer = toGraphPoint(context.svg, context.currentTransform, event);
-
-        if (edgeDragState) {
-            edgeDragState.x2 = pointer[0];
-            edgeDragState.y2 = pointer[1];
-            context.edgePreview
-                .attr("x2", pointer[0])
-                .attr("y2", pointer[1]);
+        if (!edgeDragState) {
+            return;
         }
+
+        const [x, y] = toGraphPoint(context.svg, context.currentTransform, event);
+        edgeDragState.x2 = x;
+        edgeDragState.y2 = y;
+        context.edgePreview.attr("x2", x).attr("y2", y);
+    }
+
+    function handleWindowMouseUp(event: MouseEvent): void {
+        if (!edgeDragState || event.button !== 2) {
+            return;
+        }
+
+        event.preventDefault();
+        const [x, y] = toGraphPoint(context.svg, context.currentTransform, event);
+        const sourceNodeId = edgeDragState.source.id;
+        const targetNode = context.getNodeAtPoint(x, y, sourceNodeId);
+
+        if (targetNode) {
+            if (context.removeEdge(sourceNodeId, targetNode.id)) {
+                context.refreshGraphAfterMutation(`Edge between nodes ${sourceNodeId} and ${targetNode.id} removed.`);
+            } else if (context.addEdge(sourceNodeId, targetNode.id)) {
+                context.refreshGraphAfterMutation(`Edge added between nodes ${sourceNodeId} and ${targetNode.id}.`);
+            } else {
+                context.setStatus(`Edge between nodes ${sourceNodeId} and ${targetNode.id} would violate the current problem constraints, so it was blocked.`);
+            }
+            stopEdgeDrag();
+            return;
+        }
+
+        // Dropped on empty space -> new connected vertex.
+        const newNodeData = context.addNodeAtPoint(x, y);
+        context.beginUndoGroup();
+        try {
+            if (context.addEdge(sourceNodeId, newNodeData.id)) {
+                context.refreshGraphAfterMutation(`Node ${newNodeData.id} added and connected to node ${sourceNodeId}.`);
+            } else {
+                context.removeNode(newNodeData.id);
+                context.setStatus("The new edge would violate the current problem constraints, so the new vertex was not added.");
+            }
+        } finally {
+            context.endUndoGroup();
+        }
+
+        stopEdgeDrag();
     }
 
     function handleNodeDragStart(event: D3DragEvent<SVGCircleElement, unknown, ForceNodeDatum>, _datum: unknown): void {
@@ -166,7 +204,7 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
 
     function createDragBehavior<TDatum>(subjectAccessor: (event: D3DragEvent<SVGCircleElement, TDatum, ForceNodeDatum>, datum: TDatum) => ForceNodeDatum): d3.DragBehavior<SVGCircleElement, TDatum, ForceNodeDatum> {
         return d3.drag<SVGCircleElement, TDatum, ForceNodeDatum>()
-            .filter((event: MouseEvent) => event.button === 0)
+            .filter((event: MouseEvent) => event.button === 0 && !event.ctrlKey)
             .subject(subjectAccessor)
             .on("start", handleNodeDragStart)
             .on("drag", handleNodeDragged)
@@ -183,43 +221,13 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
         return node;
     });
 
-    function handleWindowMouseUp(event: MouseEvent): void {
-        if (edgeDragState && event.button === 2) {
-            event.preventDefault();
-            const [x, y] = toGraphPoint(context.svg, context.currentTransform, event);
-            const sourceNodeId = edgeDragState.source.id;
-            const targetNode = context.getNodeAtPoint(x, y, sourceNodeId);
-
-            if (targetNode) {
-                if (context.removeEdge(sourceNodeId, targetNode.id)) {
-                    context.refreshGraphAfterMutation(`Edge between nodes ${sourceNodeId} and ${targetNode.id} removed.`);
-                } else if (context.addEdge(sourceNodeId, targetNode.id)) {
-                    context.refreshGraphAfterMutation(`Edge added between nodes ${sourceNodeId} and ${targetNode.id}.`);
-                } else {
-                    context.setStatus(`Edge between nodes ${sourceNodeId} and ${targetNode.id} would violate the current problem constraints, so it was blocked.`);
-                }
-                stopEdgeDrag();
-                return;
-            }
-
-            const newNodeData = context.addNodeAtPoint(x, y);
-            context.beginUndoGroup();
-            try {
-                if (context.addEdge(sourceNodeId, newNodeData.id)) {
-                    context.refreshGraphAfterMutation(`Node ${newNodeData.id} added and connected to node ${sourceNodeId}.`);
-                } else {
-                    context.removeNode(newNodeData.id);
-                    context.setStatus("The new edge would violate the current problem constraints, so the new vertex was not added.");
-                }
-            } finally {
-                context.endUndoGroup();
-            }
-
-            stopEdgeDrag();
-            return;
-        }
-
-    }
+    // Touch never drives these behaviours (touch gestures live entirely in
+    // touch-gestures.ts), so d3-drag must not install its per-circle touchstart
+    // listeners at all. Note d3 evaluates .touchable() when the behaviour is
+    // APPLIED to the circles, which happens after this factory runs, so the
+    // per-event filter alone is not enough.
+    nodeDrag.touchable(() => false);
+    tokenDrag.touchable(() => false);
 
     function handleNodeMouseDown(event: MouseEvent, nodeData: GraphNode): void {
         if (event.button === 1) {

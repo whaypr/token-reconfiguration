@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="style.css">
     <title>p-Fairness Graph Simulation</title>
 </head>
@@ -43,6 +44,30 @@
                 </p>
                 <p>
                     Ctrl+Z to undo up to 5 previous actions.
+                </p>
+                <p>
+                    <strong>Touch &mdash; Tokens mode:</strong>
+                    <br>
+                    Drag with one finger to pan, pinch with two to zoom.
+                    <br>
+                    Tap a vertex with a token to see its legal moves, then tap a highlighted vertex to move it there.
+                    <br>
+                    Tap empty space to drop the selection.
+                    <br>
+                    Hold a vertex ~0.4&nbsp;s to add a token &mdash; or to remove the one already there.
+                </p>
+                <p>
+                    <strong>Touch &mdash; Graph mode:</strong>
+                    <br>
+                    The same pan and zoom keep working.
+                    <br>
+                    Tap a vertex, then tap another vertex, to add or remove that edge.
+                    <br>
+                    Tap empty space to add a vertex.
+                    <br>
+                    Hold a vertex ~0.4&nbsp;s to delete it.
+                    <br>
+                    Drag a vertex to move it.
                 </p>
             </div>
         </details>
@@ -119,8 +144,14 @@
         </div>
 
         <div class="canvas-frame">
-            <div class="canvas-caption"><span>Live graph</span><span>View and edit the graph, move tokens around</span></div>
-            <svg width="1400" height="800"></svg>
+            <div class="canvas-caption">
+                <div class="mode-toggle" role="group" aria-label="Interaction mode">
+                    <button type="button" id="modeTokensButton" class="mode-button active" aria-pressed="true">Tokens</button>
+                    <button type="button" id="modeGraphButton" class="mode-button" aria-pressed="false">Graph</button>
+                </div>
+                <div class="canvas-caption-text"><span>Live graph</span><span>View and edit the graph, move tokens around</span></div>
+            </div>
+            <svg></svg>
         </div>
     </main>
 
