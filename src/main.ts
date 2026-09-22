@@ -1,15 +1,18 @@
 import { createPFairnessApp } from "./core";
+import { LAYOUT_OPTIONS } from "./layouts";
 import { problems } from "./problems";
 import { scenarios } from "./scenarios";
 import { DEFAULT_COLOR_HINTS } from "./types";
-import type { ColorHints, InteractionMode, LayoutMode, PFairnessApp } from "./types";
+import type { ColorHints, InteractionMode, PFairnessApp } from "./types";
 
 function bootstrap(): void {
     const scenarioSelect = document.getElementById("scenarioSelect") as HTMLSelectElement;
     const problemSelect = document.getElementById("problemSelect") as HTMLSelectElement;
     const parameterLabel = document.getElementById("parameterLabel") as HTMLElement;
     const parameterDescription = document.getElementById("parameterDescription") as HTMLElement;
-    const layoutSelect = document.getElementById("layoutSelect") as HTMLSelectElement;
+    const layoutPicker = document.getElementById("layoutPicker") as HTMLDetailsElement;
+    const layoutPickerBackdrop = document.getElementById("layoutPickerBackdrop") as HTMLDivElement;
+    const layoutOptions = document.getElementById("layoutOptions") as HTMLDivElement;
     const repulsionToggle = document.getElementById("repulsionToggle") as HTMLInputElement;
     const neighborhoodCountToggle = document.getElementById("neighborhoodCountToggle") as HTMLInputElement;
     const moveDirectionToggle = document.getElementById("moveDirectionToggle") as HTMLInputElement;
@@ -26,7 +29,7 @@ function bootstrap(): void {
     const deleteSelectionButton = document.getElementById("deleteSelectionButton") as HTMLButtonElement;
     const selectionImportInput = document.getElementById("selectionImportInput") as HTMLInputElement;
 
-    if (!scenarioSelect || !problemSelect || !parameterLabel || !parameterDescription || !layoutSelect || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !colorMovableToggle || !colorFrozenToggle || !colorPlaceableToggle || !modeTokensButton || !modeGraphButton || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0 || problems.length === 0) {
+    if (!scenarioSelect || !problemSelect || !parameterLabel || !parameterDescription || !layoutPicker || !layoutPickerBackdrop || !layoutOptions || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !colorMovableToggle || !colorFrozenToggle || !colorPlaceableToggle || !modeTokensButton || !modeGraphButton || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0 || problems.length === 0) {
         window.setTimeout(bootstrap, 0);
         return;
     }
@@ -66,13 +69,44 @@ function bootstrap(): void {
             return;
         }
 
-        currentApp.applyLayout(layoutSelect.value as LayoutMode);
         currentApp.setRepulsionEnabled(repulsionToggle.checked);
         currentApp.setNeighborhoodCountVisibility(neighborhoodCountToggle.checked);
         currentApp.setMoveDirectionVisibility(moveDirectionToggle.checked);
         currentApp.setInteractionMode(interactionMode);
         currentApp.setColorHints(readColorHints());
     }
+
+    // A layout is an action, not a setting: picking one rearranges the graph
+    // once and leaves no control behind in a "selected" state, because the
+    // arrangement is free to change again the moment a vertex is dragged.
+    function renderLayoutOptions(): void {
+        LAYOUT_OPTIONS.forEach(({ value, label }) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "layout-option";
+            button.textContent = label;
+            button.addEventListener("click", () => {
+                if (!currentApp) {
+                    return;
+                }
+
+                currentApp.applyLayout(value);
+                // Worth saying out loud: the menu closes and no control is left
+                // showing a chosen layout, so the status line is the only thing
+                // confirming the arrangement really changed.
+                currentApp.setStatus(`${label} layout applied.`);
+                layoutPicker.removeAttribute("open");
+            });
+            layoutOptions.appendChild(button);
+        });
+    }
+
+    // The backdrop is what a press meant to dismiss the menu lands on, so
+    // closing here is all it takes — and the canvas below never sees the click,
+    // which matters because a background click there edits the graph.
+    layoutPickerBackdrop.addEventListener("click", () => {
+        layoutPicker.removeAttribute("open");
+    });
 
     function renderScenarioOptions(): void {
         scenarioSelect.innerHTML = "";
@@ -125,10 +159,6 @@ function bootstrap(): void {
     scenarioSelect.addEventListener("change", event => {
         const target = event.target as HTMLSelectElement;
         loadScenario(Number.parseInt(target.value, 10));
-    });
-
-    layoutSelect.addEventListener("change", () => {
-        applyControlsToApp();
     });
 
     repulsionToggle.addEventListener("change", () => {
@@ -225,7 +255,7 @@ function bootstrap(): void {
     scenarioSelect.value = "0";
     problemSelect.value = "0";
     renderProblem();
-    layoutSelect.value = "circular";
+    renderLayoutOptions();
     repulsionToggle.checked = false;
     neighborhoodCountToggle.checked = false;
     moveDirectionToggle.checked = false;

@@ -1,5 +1,17 @@
-import type { GraphNode, LayoutMode, NodeId } from "./types";
+import type { GraphNode, LayoutMode } from "./types";
 import { Graph } from "./graph";
+
+// One list for both ends of the control: the View panel builds its buttons from
+// this, and applyGraphLayout below is the only other place a layout appears, so
+// the two cannot drift apart.
+export const LAYOUT_OPTIONS: Array<{ value: LayoutMode; label: string }> = [
+    { value: "circle", label: "Circle" },
+    { value: "binaryTree", label: "Binary tree" },
+    { value: "ternaryTree", label: "Ternary tree" },
+    { value: "grid", label: "Grid" },
+    { value: "horizontal", label: "Horizontal" },
+    { value: "spiral", label: "Spiral" },
+];
 
 interface LayoutContext {
     graph: Graph;
@@ -16,7 +28,7 @@ function setNodePosition(node: GraphNode, x: number, y: number, fixed: boolean):
     node.fy = fixed ? y : undefined;
 }
 
-function applyCircularLayout(context: LayoutContext): void {
+function applyCircleLayout(context: LayoutContext): void {
     const orderedNodes = context.graph.getSortedNodes();
 
     if (orderedNodes.length === 0) {
@@ -73,23 +85,6 @@ function applyHorizontalLayout(context: LayoutContext): void {
     });
 }
 
-function applyVerticalLayout(context: LayoutContext): void {
-    const orderedNodes = context.graph.getSortedNodes();
-
-    if (orderedNodes.length === 0) {
-        return;
-    }
-
-    const yStep = context.height / (orderedNodes.length + 1);
-    const centerX = context.width / 2;
-
-    orderedNodes.forEach((node, index) => {
-        const x = centerX + (index % 2 === 0 ? -24 : 24);
-        const y = (index + 1) * yStep;
-        setNodePosition(node, x, y, true);
-    });
-}
-
 function applySpiralLayout(context: LayoutContext): void {
     const orderedNodes = context.graph.getSortedNodes();
 
@@ -111,112 +106,96 @@ function applySpiralLayout(context: LayoutContext): void {
     });
 }
 
-function buildAdjacencyMap(context: LayoutContext): Map<NodeId, GraphNode[]> {
-    const adjacency = new Map<NodeId, GraphNode[]>();
-    const nodes = context.graph.nodes;
-    const links = context.graph.links;
-
-    nodes.forEach(node => {
-        adjacency.set(node.id, []);
-    });
-
-    links.forEach(linkData => {
-        const sourceId = context.graph.getLinkEndpoint(linkData.source);
-        const targetId = context.graph.getLinkEndpoint(linkData.target);
-        const sourceNode = nodes.find(node => node.id === sourceId);
-        const targetNode = nodes.find(node => node.id === targetId);
-
-        if (sourceNode && targetNode) {
-            adjacency.get(sourceId)?.push(targetNode);
-            adjacency.get(targetId)?.push(sourceNode);
-        }
-    });
-
-    return adjacency;
-}
-
-function applyTreeLayout(context: LayoutContext): void {
-    const adjacency = buildAdjacencyMap(context);
+// The two k-ary layouts share one shape. Like every other layout here it is
+// applied to the vertices in id order and reads no edges: a graph whose vertices
+// have more than k neighbours could not be drawn as a k-ary tree at all, so the
+// tree is the arrangement, not a claim about the connections. Vertices fill it
+// the way a heap numbers them — vertex i at depth d, its children at k·i+1
+// through k·i+k — which is also how the Balanced Tree scenario is built, so that
+// one graph lands on its own structure.
+function applyKaryTreeLayout(context: LayoutContext, branching: number): void {
     const orderedNodes = context.graph.getSortedNodes();
-    const unvisitedNodes = new Set<GraphNode>(orderedNodes);
-    const componentLayouts: Array<Map<number, GraphNode[]>> = [];
+    const nodeCount = orderedNodes.length;
 
-    while (unvisitedNodes.size > 0) {
-        const rootNode = orderedNodes.find(node => unvisitedNodes.has(node)) || unvisitedNodes.values().next().value;
-        if (!rootNode) {
-            break;
-        }
-
-        const levels = new Map<number, GraphNode[]>();
-        const queue: Array<{ node: GraphNode; depth: number }> = [{ node: rootNode, depth: 0 }];
-        const visitedComponent = new Set<NodeId>();
-
-        while (queue.length > 0) {
-            const current = queue.shift();
-            if (!current) {
-                continue;
-            }
-
-            const { node, depth } = current;
-            if (visitedComponent.has(node.id)) {
-                continue;
-            }
-
-            visitedComponent.add(node.id);
-            unvisitedNodes.delete(node);
-
-            const nodesAtLevel = levels.get(depth) || [];
-            nodesAtLevel.push(node);
-            levels.set(depth, nodesAtLevel);
-
-            (adjacency.get(node.id) || [])
-                .sort((leftNode, rightNode) => context.graph.compareNodeIds(leftNode.id, rightNode.id))
-                .forEach(neighbor => {
-                    if (!visitedComponent.has(neighbor.id)) {
-                        queue.push({ node: neighbor, depth: depth + 1 });
-                    }
-                });
-        }
-
-        componentLayouts.push(levels);
-    }
-
-    if (componentLayouts.length === 0) {
+    if (nodeCount === 0) {
         return;
     }
 
-    const componentHeight = context.height / componentLayouts.length;
+    const childrenOf = (index: number): number[] => {
+        const children: number[] = [];
 
-    componentLayouts.forEach((levels, componentIndex) => {
-        const componentTop = componentIndex * componentHeight;
-        const levelEntries = [...levels.entries()].sort((left, right) => left[0] - right[0]);
-        const levelHeight = componentHeight / (levelEntries.length + 1);
+        for (let slot = 0; slot < branching; slot += 1) {
+            const childIndex = branching * index + 1 + slot;
 
-        levelEntries.forEach(([_depth, levelNodes], levelIndex) => {
-            const y = componentTop + (levelIndex + 1) * levelHeight;
-            const xStep = context.width / (levelNodes.length + 1);
+            if (childIndex < nodeCount) {
+                children.push(childIndex);
+            }
+        }
 
-            levelNodes
-                .sort((leftNode, rightNode) => context.graph.compareNodeIds(leftNode.id, rightNode.id))
-                .forEach((node, nodeIndex) => {
-                    const x = (nodeIndex + 1) * xStep;
-                    setNodePosition(node, x, y, true);
-                });
+        return children;
+    };
+
+    // Which depth each vertex sits at, walking the levels of a complete k-ary
+    // tree until the vertices run out. The last level is usually partial.
+    const levels: number[][] = [];
+
+    for (let levelStart = 0, levelWidth = 1; levelStart < nodeCount; levelStart += levelWidth, levelWidth *= branching) {
+        const count = Math.min(levelWidth, nodeCount - levelStart);
+        levels.push(Array.from({ length: count }, (_unused, offset) => levelStart + offset));
+    }
+
+    // A leaf takes the next column, left to right, and every parent centres
+    // itself over its own children. Columns are therefore not one per vertex:
+    // a parent shares the middle of the span its children cover, which is what
+    // makes the branches read as branches. Leaves are claimed in traversal
+    // order rather than by id, because on a partial last level the leftmost
+    // leaf can be the deepest vertex.
+    const columnOf: number[] = [];
+    let nextColumn = 0;
+
+    const placeSubtree = (index: number): number => {
+        const children = childrenOf(index);
+
+        if (children.length === 0) {
+            columnOf[index] = nextColumn;
+            nextColumn += 1;
+            return columnOf[index];
+        }
+
+        const childColumns = children.map(placeSubtree);
+        columnOf[index] = (Math.min(...childColumns) + Math.max(...childColumns)) / 2;
+
+        return columnOf[index];
+    };
+
+    placeSubtree(0);
+
+    // Recursion depth is the tree's own depth, so it stays shallow however many
+    // vertices there are; the loop above is the only thing that grows with them.
+    const columnCount = Math.max(nextColumn, 1);
+    const columnStep = context.width / (columnCount + 1);
+    const levelStep = context.height / (levels.length + 1);
+
+    levels.forEach((levelIndices, depth) => {
+        const y = (depth + 1) * levelStep;
+
+        levelIndices.forEach(index => {
+            setNodePosition(orderedNodes[index], (columnOf[index] + 1) * columnStep, y, true);
         });
     });
 }
 
 export function applyGraphLayout(context: LayoutContext, layout: LayoutMode): void {
-    if (layout === "circular") {
-        applyCircularLayout(context);
-    } else if (layout === "tree") {
-        applyTreeLayout(context);
+    if (layout === "circle") {
+        applyCircleLayout(context);
+    } else if (layout === "binaryTree") {
+        applyKaryTreeLayout(context, 2);
+    } else if (layout === "ternaryTree") {
+        applyKaryTreeLayout(context, 3);
     } else if (layout === "grid") {
         applyGridLayout(context);
     } else if (layout === "horizontal") {
         applyHorizontalLayout(context);
-    } else if (layout === "vertical") {
-        applyVerticalLayout(context);
     } else {
         applySpiralLayout(context);
     }

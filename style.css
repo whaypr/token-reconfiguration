@@ -299,6 +299,113 @@ h1 {
     color: var(--panel);
 }
 
+/* A layout is applied, not remembered, so this reads as a menu attached to an
+   action: "Apply layout" opens the list, a choice rearranges once and closes
+   it. <details> supplies the open/close and the keyboard; the panel floats so
+   the View section keeps its height while it is open. */
+.layout-picker {
+    position: relative;
+}
+
+.layout-picker>summary {
+    list-style: none;
+    position: relative;
+    /* Above the backdrop, so the control that opened the menu stays the one
+       that closes it. */
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 9px;
+    min-height: 34px;
+    padding: 6px 9px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: #fbfcfc;
+    color: var(--ink);
+    font-size: 0.82rem;
+    cursor: pointer;
+}
+
+.layout-picker>summary::-webkit-details-marker {
+    display: none;
+}
+
+.layout-picker>summary::after {
+    content: "▾";
+    color: var(--muted);
+}
+
+.layout-picker[open]>summary {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.layout-picker[open]>summary::after {
+    content: "▴";
+}
+
+.layout-picker>summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* Catches presses meant to dismiss the menu. It has to be an element and not a
+   document listener: the canvas underneath edits the graph on a background
+   click, so a tap that only meant to close the menu would also add a vertex.
+   It spans the viewport and sits under the panel, above everything else. */
+.layout-picker-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+}
+
+.layout-picker[open] .layout-picker-backdrop {
+    display: block;
+}
+
+.layout-options {
+    display: none;
+    position: absolute;
+    z-index: 3;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    gap: 1px;
+    padding: 3px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--panel);
+    box-shadow: 0 6px 16px rgba(23, 33, 43, 0.12);
+}
+
+.layout-picker[open] .layout-options {
+    display: flex;
+}
+
+.layout-option {
+    min-height: 34px;
+    padding: 6px 9px;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--ink);
+    font: 500 0.78rem "Space Grotesk", sans-serif;
+    text-align: left;
+    cursor: pointer;
+}
+
+.layout-option:hover {
+    background: var(--accent-soft);
+}
+
+.layout-option:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
 .selection-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

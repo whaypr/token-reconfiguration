@@ -1,5 +1,5 @@
 export type NodeId = number | string;
-export type LayoutMode = "circular" | "tree" | "grid" | "horizontal" | "vertical" | "spiral";
+export type LayoutMode = "circle" | "binaryTree" | "ternaryTree" | "grid" | "horizontal" | "spiral";
 
 // Which verb a touch means on the canvas. The mouse never consults this:
 // every desktop gesture works in both modes.

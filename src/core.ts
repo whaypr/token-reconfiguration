@@ -88,7 +88,6 @@ export function createPFairnessApp({
     const graphLinks: ForceLinkDatum[] = graph.links as ForceLinkDatum[];
     let selectedTokenId: string | null = null;
     let legalMoveTargets = new Set<NodeId>();
-    let currentLayout: LayoutMode = "circular";
     let repulsionEnabled = false;
     let showNeighborhoodCounts = false;
     let showMoveDirections = false;
@@ -247,8 +246,6 @@ export function createPFairnessApp({
     }
 
     function applyLayout(layout: LayoutMode): void {
-        currentLayout = layout;
-
         applyGraphLayout({
             graph,
             width,
@@ -1133,26 +1130,49 @@ export function createPFairnessApp({
         if (rect.width < 60 || rect.height < 60) {
             return;
         }
-        // Graph positions are computed against width/height, so a real change
-        // (phone shows ~370x500, desktop ~1200x800) must also relayout, or
-        // every vertex silently lives outside the visible canvas and taps
-        // land on empty space.
+        // A real size change (phone shows ~370x500, desktop ~1200x800) has to
+        // move the graph with it, or every vertex keeps the coordinates of the
+        // canvas it was arranged in and sits outside the visible one, where
+        // taps land on empty space. It is scaled rather than laid out again:
+        // a layout is one-time now, and what needs fitting may just as well be
+        // a hand-dragged or force-simulated arrangement. Only after the first
+        // measurement — before it there is no shape to scale, and vertices
+        // would be multiplied out of the origin they were seeded at.
         const sizeChanged = Math.abs(rect.width - width) > 1 || Math.abs(rect.height - height) > 1;
+        const scaleX = sizeChanged && width > 0 ? rect.width / width : 1;
+        const scaleY = sizeChanged && height > 0 ? rect.height / height : 1;
         width = rect.width;
         height = rect.height;
         svg.attr("width", width).attr("height", height);
         background.attr("width", width).attr("height", height);
-        syncSimulation();
-        if (sizeChanged && typeof applyLayout === "function") {
-            applyLayout(currentLayout);
+        if (scaleX !== 1 || scaleY !== 1) {
+            graphNodes.forEach(node => {
+                node.x *= scaleX;
+                node.y *= scaleY;
+                node.anchorX *= scaleX;
+                node.anchorY *= scaleY;
+                // The pin travels with the vertex: leaving it behind would let
+                // the simulation drag it back to the old canvas size.
+                if (node.fx !== undefined) {
+                    node.fx *= scaleX;
+                }
+                if (node.fy !== undefined) {
+                    node.fy *= scaleY;
+                }
+            });
         }
+        syncSimulation();
     }
 
     syncCanvasSize();
     simulation.on("tick", positionGraphElements);
 
     refreshGraphAfterMutation();
-    applyLayout(currentLayout);
+    // No scenario ships coordinates, and the factory seeds every vertex at the
+    // origin because the canvas has no size yet, so the opening arrangement
+    // still has to be computed — once, here, now that it does. The layouts the
+    // user picks are one-time and stay out of this.
+    applyLayout("circle");
     clearTokenMoveSelection();
 
     function setInteractionMode(mode: InteractionMode): void {

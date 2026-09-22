@@ -105,17 +105,11 @@
                     <span class="group-kicker">Canvas</span>
                     <span class="group-title">View</span>
                 </div>
-                <label class="control-field">
-                    <span>Layout</span>
-                    <select id="layoutSelect">
-                        <option value="circular">Circular</option>
-                        <option value="tree">Tree</option>
-                        <option value="grid">Grid</option>
-                        <option value="horizontal">Horizontal</option>
-                        <option value="vertical">Vertical</option>
-                        <option value="spiral">Spiral</option>
-                    </select>
-                </label>
+                <details class="layout-picker" id="layoutPicker">
+                    <summary>Apply layout</summary>
+                    <div class="layout-picker-backdrop" id="layoutPickerBackdrop"></div>
+                    <div class="layout-options" id="layoutOptions"></div>
+                </details>
                 <label class="toggle-field">
                     <input type="checkbox" id="repulsionToggle">
                     <span>Repulsive force</span>
