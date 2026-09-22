@@ -18,6 +18,7 @@ import type {
 } from "./types";
 import { createTouchGestures, TOUCH_HIT_RADIUS_PX } from "./touch-gestures";
 import { applyGraphLayout } from "./layouts";
+import { ZOOM_SCALE_RANGE, fitGraphToCanvas } from "./canvas-view";
 import { createGraph } from "./graph-factory";
 import { createGraphInteractions } from "./graph-interactions";
 import { SelectionManager } from "./selection";
@@ -59,6 +60,25 @@ type AppUndoSnapshot = {
 };
 
 type SvgSelection = Selection<SVGSVGElement, unknown, null, undefined>;
+
+// Does this batch of vertices arrive with its own drawing? A vertex that was
+// only named (an id, or no coordinates) is placed by the factory relative to a
+// canvas it has not been given a size for yet, so a scenario has to have said
+// where EVERY vertex goes before its arrangement can be trusted. The check
+// belongs here rather than on the built graph because a vertex with no
+// coordinates still ends up at finite numbers, indistinguishable from one that
+// was genuinely drawn at that spot.
+function inputsCarryPositions(nodes: Array<unknown>): boolean {
+    return nodes.length > 0 && nodes.every(node => {
+        if (typeof node !== "object" || node === null) {
+            return false;
+        }
+
+        const { x, y } = node as { x?: unknown; y?: unknown };
+
+        return typeof x === "number" && Number.isFinite(x) && typeof y === "number" && Number.isFinite(y);
+    });
+}
 
 export function createPFairnessApp({
     svgSelector,
@@ -171,7 +191,7 @@ export function createPFairnessApp({
     let colorHints: ColorHints = { ...DEFAULT_COLOR_HINTS };
 
     const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.15, 3])
+        .scaleExtent(ZOOM_SCALE_RANGE)
         .filter((event: MouseEvent | WheelEvent | TouchEvent) => {
             // One- and two-finger touches start gestures of their own (the
             // recogniser decides who truly owns a touch), three fingers do
@@ -254,6 +274,15 @@ export function createPFairnessApp({
         }
 
         fixNodesForStaticLayout();
+    }
+
+    // Moves the window onto a part of the graph without moving the graph. Going
+    // through the zoom behaviour rather than the viewport's transform attribute
+    // is what keeps the two in step: the behaviour remembers where it thinks the
+    // graph is, so a transform it was never told about would be undone by the
+    // next wheel tick, and taps would land somewhere else than they look.
+    function setCanvasView(view: ZoomTransform): void {
+        svg.call(zoomBehavior.transform, view);
     }
 
     function applyLayout(layout: LayoutMode): void {
@@ -1209,6 +1238,8 @@ export function createPFairnessApp({
         // a hand-dragged or force-simulated arrangement. Only after the first
         // measurement — before it there is no shape to scale, and vertices
         // would be multiplied out of the origin they were seeded at.
+        const previousWidth = width;
+        const previousHeight = height;
         const sizeChanged = Math.abs(rect.width - width) > 1 || Math.abs(rect.height - height) > 1;
         const scaleX = sizeChanged && width > 0 ? rect.width / width : 1;
         const scaleY = sizeChanged && height > 0 ? rect.height / height : 1;
@@ -1216,6 +1247,32 @@ export function createPFairnessApp({
         height = rect.height;
         svg.attr("width", width).attr("height", height);
         background.attr("width", width).attr("height", height);
+
+        if (shipsOwnPositions) {
+            // The same job as scaling the rest, done without moving one
+            // coordinate. A drawing that said where its vertices go keeps those
+            // numbers for good, so it is the window that travels instead.
+            if (previousWidth <= 0 || previousHeight <= 0) {
+                // Nothing has been framed yet — this is either the first
+                // measurement or the first one that had a window worth
+                // measuring. The drawing is typically wider than a phone, so
+                // this is what brings it into view at all.
+                setCanvasView(fitGraphToCanvas(graphNodes, width, height));
+            } else if (sizeChanged) {
+                // Half the change on each axis holds the middle of the drawing
+                // in the middle of the window, where that framing put it, and
+                // leaves whatever pan and zoom the user added on top of it
+                // exactly as they left it. Divided by the scale because a
+                // transform's offset is in screen units while its translate is
+                // counted in graph units.
+                setCanvasView(currentTransform.translate(
+                    (width - previousWidth) / 2 / currentTransform.k,
+                    (height - previousHeight) / 2 / currentTransform.k,
+                ));
+            }
+            return;
+        }
+
         if (scaleX !== 1 || scaleY !== 1) {
             graphNodes.forEach(node => {
                 node.x *= scaleX;
@@ -1235,15 +1292,40 @@ export function createPFairnessApp({
         syncSimulation();
     }
 
+    // Whether the opening arrangement came from the file that was loaded rather
+    // than from a layout. Read once here and never recomputed: a canvas resize
+    // must keep such a drawing on its own coordinates, which is the whole point
+    // of saying where the vertices go.
+    const shipsOwnPositions = inputsCarryPositions(nodes);
+
     syncCanvasSize();
     simulation.on("tick", positionGraphElements);
 
     refreshGraphAfterMutation();
-    // No scenario ships coordinates, and the factory seeds every vertex at the
-    // origin because the canvas has no size yet, so the opening arrangement
-    // still has to be computed — once, here, now that it does. The layouts the
-    // user picks are one-time and stay out of this.
-    applyLayout("circle");
+
+    if (shipsOwnPositions) {
+        // A drawn scenario asked for these coordinates exactly, so nothing here
+        // rearranges them — not even to fit them onto the window. What the
+        // canvas cannot show at 1:1 is brought in by the viewport transform
+        // instead, and the user's next pan or wheel turn takes it back off. The
+        // first measurement above usually framed it already; asking again costs
+        // nothing and means the invariant holds even when that measurement came
+        // too early to be usable.
+        setCanvasView(fitGraphToCanvas(graphNodes, width, height));
+    } else {
+        // A scenario that only names its vertices has no arrangement at all —
+        // the factory seeds them around an origin it cannot size yet — so the
+        // opening layout still has to be computed, once, here, now that the
+        // canvas has a size. The layouts the user picks are one-time and stay
+        // out of this.
+        applyLayout("circle");
+        // And the window is its own again. A previous drawn scenario left this
+        // transform on the svg element, where destroy() cannot reach it; without
+        // this the gesture would still be holding that drawing's pan and would
+        // shove the new one off with it on the first wheel tick.
+        setCanvasView(d3.zoomIdentity);
+    }
+
     clearTokenMoveSelection();
 
     function setInteractionMode(mode: InteractionMode): void {

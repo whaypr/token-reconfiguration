@@ -38,10 +38,15 @@ export interface Scenario {
     id: string;
     name: string;
     description: string;
-    initialP: number;
     nodes: Array<NodeId | ScenarioNodeInput>;
     links: GraphLinkInput[];
     tokens: TokenInput[];
+    // The problem the scenario was drawn under, in the same shape a saved file
+    // carries it. Selecting the scenario switches to it, which is why a scenario
+    // can outlive the ordering of the problem list: it names an id rather than
+    // an index. `parameter` is its own value for that problem, because a number
+    // means something different under every problem.
+    problem?: SerializedProblemContext;
 }
 
 export interface GraphNode extends ScenarioNodeInput {

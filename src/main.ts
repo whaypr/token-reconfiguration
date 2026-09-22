@@ -125,6 +125,13 @@ function bootstrap(): void {
             currentApp.destroy();
         }
 
+        // A scenario drawn under one problem is meaningless under another, so
+        // its own problem wins over whatever the dropdown happened to show — and
+        // the dropdown then says what the rules are actually applying.
+        const scenarioProblem = findProblemById(scenario.problem?.id) || currentProblem;
+        currentProblem = scenarioProblem;
+        problemSelect.value = String(problems.indexOf(scenarioProblem));
+
         currentApp = createPFairnessApp({
             svgSelector: "svg",
             parameterInputSelector: "#parameterValue",
@@ -132,8 +139,11 @@ function bootstrap(): void {
             nodes: scenario.nodes,
             links: scenario.links,
             tokens: scenario.tokens,
-            initialParameter: currentProblem.id === "p-fairness" ? scenario.initialP : currentProblem.defaultParameter,
-            problem: currentProblem,
+            initialParameter: clampParameter(
+                scenario.problem?.parameter ?? scenarioProblem.defaultParameter,
+                scenarioProblem,
+            ),
+            problem: scenarioProblem,
             // Undo can put a different problem back on the graph, and the
             // dropdown plus its two labels have to follow without being told.
             onProblemChange: problem => {
@@ -144,7 +154,19 @@ function bootstrap(): void {
         });
 
         applyControlsToApp();
+        renderProblem(scenarioProblem);
         currentApp.setStatus(scenario.description);
+    }
+
+    // Saved files name a problem by id rather than by position, so a reordered
+    // problem list still opens them under the problem they were saved with. The
+    // scenario picker leans on the same match for the same reason.
+    function findProblemById(problemId: string | undefined): ProblemDefinition | null {
+        if (!problemId) {
+            return null;
+        }
+
+        return problems.find(problem => problem.id === problemId) || null;
     }
 
     renderScenarioOptions();

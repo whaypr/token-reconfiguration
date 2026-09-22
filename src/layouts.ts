@@ -111,8 +111,8 @@ function applySpiralLayout(context: LayoutContext): void {
 // have more than k neighbours could not be drawn as a k-ary tree at all, so the
 // tree is the arrangement, not a claim about the connections. Vertices fill it
 // the way a heap numbers them — vertex i at depth d, its children at k·i+1
-// through k·i+k — which is also how the Balanced Tree scenario is built, so that
-// one graph lands on its own structure.
+// through k·i+k — which is how a complete k-ary tree is numbered, so a graph that
+// is one lands on its own structure.
 function applyKaryTreeLayout(context: LayoutContext, branching: number): void {
     const orderedNodes = context.graph.getSortedNodes();
     const nodeCount = orderedNodes.length;
