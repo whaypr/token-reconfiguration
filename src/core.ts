@@ -98,8 +98,6 @@ export function createPFairnessApp({
     const undoStack: AppUndoSnapshot[] = [];
     let undoGroupDepth = 0;
 
-    const defaultStatusMessage = "Tap a token to see its legal moves, then tap a highlighted vertex to move it. Toggle the ✎ Edit button to edit the graph by hand.";
-
     const background = svg.append("rect")
         .attr("class", "graph-background")
         .attr("width", width)
@@ -485,7 +483,7 @@ export function createPFairnessApp({
         return graph.getLegalMoveTargets(tokenId).length === 0;
     }
 
-    function clearTokenMoveSelection(statusMessage: string = defaultStatusMessage): void {
+    function clearTokenMoveSelection(statusMessage: string = ""): void {
         selectedTokenId = null;
         legalMoveTargets = new Set<NodeId>();
         updateNodeClasses();
@@ -1163,9 +1161,9 @@ export function createPFairnessApp({
         clearTokenMoveSelection();
 
         if (mode === "graph") {
-            setStatus("Graph mode: tap a vertex to start an edge, then tap another vertex to add/remove it. Tap empty space to add a vertex, hold a vertex to delete it, drag a vertex to move it. One finger pans, two fingers zoom.");
+            setStatus("Switched to graph mode.");
         } else {
-            setStatus(defaultStatusMessage);
+            setStatus("Switched to token mode.");
         }
     }
 
