@@ -1,5 +1,5 @@
 import type { Graph } from "./graph";
-import type { GraphNode, NodeId, SerializedSubgraph, SerializedSubgraphNode } from "./types";
+import type { GraphNode, NodeId, ProblemDefinition, SerializedProblemContext, SerializedSubgraph, SerializedSubgraphNode } from "./types";
 
 export function getSelectedBounds(graph: Graph, selectedNodeIds: Set<NodeId>): { minX: number; minY: number; maxX: number; maxY: number } | null {
     const selectedNodes = graph.nodes.filter(node => selectedNodeIds.has(node.id));
@@ -19,7 +19,11 @@ export function getSelectedBounds(graph: Graph, selectedNodeIds: Set<NodeId>): {
     };
 }
 
-export function serializeSelectedSubgraph(graph: Graph, selectedNodeIds: Set<NodeId>): SerializedSubgraph | null {
+export function serializeSelectedSubgraph(
+    graph: Graph,
+    selectedNodeIds: Set<NodeId>,
+    problem: ProblemDefinition,
+): SerializedSubgraph | null {
     const selectedNodes = graph.nodes.filter(node => selectedNodeIds.has(node.id));
 
     if (selectedNodes.length === 0) {
@@ -42,7 +46,29 @@ export function serializeSelectedSubgraph(graph: Graph, selectedNodeIds: Set<Nod
             target: graph.getLinkEndpoint(link.target),
         })),
         tokens: selectedTokens.map(token => ({ id: token.id, nodeId: token.nodeId })),
+        // The parameter is taken from the graph rather than from the problem's
+        // default: it is the value the selection was actually worked at.
+        problem: { id: problem.id, name: problem.name, parameter: graph.parameter },
     };
+}
+
+// Read defensively rather than trusting the cast at the parse site: the context
+// is a newer, optional field, so anything shaped wrong is treated as absent
+// instead of poisoning the problem the graph ends up using.
+export function readProblemContext(data: SerializedSubgraph): SerializedProblemContext | undefined {
+    const context = (data as { problem?: unknown }).problem;
+
+    if (!context || typeof context !== "object") {
+        return undefined;
+    }
+
+    const { id, name, parameter } = context as Partial<SerializedProblemContext>;
+
+    if (typeof id !== "string" || typeof name !== "string" || !Number.isFinite(parameter)) {
+        return undefined;
+    }
+
+    return { id, name, parameter: parameter as number };
 }
 
 function makeUniqueTokenId(existingIds: Set<string>, index: number): string {

@@ -3,7 +3,7 @@ import { LAYOUT_OPTIONS } from "./layouts";
 import { problems } from "./problems";
 import { scenarios } from "./scenarios";
 import { DEFAULT_COLOR_HINTS } from "./types";
-import type { ColorHints, InteractionMode, PFairnessApp } from "./types";
+import type { ColorHints, InteractionMode, PFairnessApp, ProblemDefinition, SerializedProblemContext } from "./types";
 
 function bootstrap(): void {
     const scenarioSelect = document.getElementById("scenarioSelect") as HTMLSelectElement;
@@ -38,13 +38,12 @@ function bootstrap(): void {
     let currentProblem = problems[0];
     let interactionMode: InteractionMode = "tokens";
 
+    // Only the words here. The number box — its bounds, step and value — is the
+    // app's to keep in step with the rules it is enforcing, because undo can
+    // move the problem without asking this file first.
     function renderProblem(problem = currentProblem): void {
         parameterLabel.textContent = `${problem.parameterLabel}`;
         parameterDescription.textContent = problem.parameterDescription;
-        const parameterInput = document.getElementById("parameterValue") as HTMLInputElement;
-        parameterInput.min = String(problem.minParameter);
-        parameterInput.max = String(problem.maxParameter);
-        parameterInput.step = String(problem.parameterStep);
     }
 
     function applyInteractionMode(mode: InteractionMode): void {
@@ -135,6 +134,13 @@ function bootstrap(): void {
             tokens: scenario.tokens,
             initialParameter: currentProblem.id === "p-fairness" ? scenario.initialP : currentProblem.defaultParameter,
             problem: currentProblem,
+            // Undo can put a different problem back on the graph, and the
+            // dropdown plus its two labels have to follow without being told.
+            onProblemChange: problem => {
+                currentProblem = problem;
+                problemSelect.value = String(problems.indexOf(problem));
+                renderProblem(problem);
+            },
         });
 
         applyControlsToApp();
@@ -150,10 +156,18 @@ function bootstrap(): void {
         problemSelect.appendChild(option);
     });
 
+    // The graph in the canvas is the user's work, so changing the problem does
+    // not reload it. Only when no graph exists yet does the choice decide which
+    // scenario to build.
     problemSelect.addEventListener("change", event => {
         currentProblem = problems[Number.parseInt((event.target as HTMLSelectElement).value, 10)] || problems[0];
         renderProblem();
-        loadScenario(Number.parseInt(scenarioSelect.value, 10));
+
+        if (currentApp) {
+            currentApp.setProblem(currentProblem);
+        } else {
+            loadScenario(Number.parseInt(scenarioSelect.value, 10));
+        }
     });
 
     scenarioSelect.addEventListener("change", event => {
@@ -232,9 +246,38 @@ function bootstrap(): void {
             return;
         }
 
-        await currentApp.importSelection(file);
+        const savedProblem = await currentApp.importSelection(file);
+
+        if (savedProblem) {
+            adoptSavedProblem(savedProblem);
+        }
+
         selectionImportInput.value = "";
     });
+
+    // A file names its problem by id, which is the only stable handle on it —
+    // names are display text and ids survive a rename. An id this build does not
+    // know is ignored: the vertices are still good geometry, so they stay pasted
+    // and the graph simply keeps the problem it was already using.
+    function adoptSavedProblem(savedProblem: SerializedProblemContext): void {
+        const matchIndex = problems.findIndex(problem => problem.id === savedProblem.id);
+
+        if (matchIndex === -1) {
+            currentApp?.setStatus(`Imported under ${savedProblem.name}, which this build does not have — kept the current problem.`);
+            return;
+        }
+
+        // setProblem announces through onProblemChange when the problem really
+        // changes; a same-problem import leaves only the parameter to report,
+        // which setProblem's own message already covers.
+        currentApp?.setProblem(problems[matchIndex], clampParameter(savedProblem.parameter, problems[matchIndex]));
+    }
+
+    // A file could carry a value the current problem's own bounds reject, so it
+    // is pulled inside them rather than handed over to be silently refused.
+    function clampParameter(value: number, problem: ProblemDefinition): number {
+        return Math.min(problem.maxParameter, Math.max(problem.minParameter, value));
+    }
 
     window.addEventListener("keydown", event => {
         if (!currentApp || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "z") {

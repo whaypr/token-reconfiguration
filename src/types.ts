@@ -91,11 +91,26 @@ export interface SerializedSubgraphNode {
     y: number;
 }
 
+// The problem a file was saved under. `id` is what a later load matches on, so
+// it is the one field that has to be exact; `name` is there so a file stays
+// legible to a person, and so an older build can still say what it came from.
+export interface SerializedProblemContext {
+    id: string;
+    name: string;
+    parameter: number;
+}
+
+// `version` stays at 1 and the context is optional on purpose. A reader that
+// only knows version 1 ignores an extra key, so new files still open in an
+// older build, and a file with no context is simply one whose problem is
+// unknown — the same thing an old file is. Bumping the version would have made
+// new files unreadable to the build that checks `version === 1`.
 export interface SerializedSubgraph {
     version: 1;
     nodes: SerializedSubgraphNode[];
     links: GraphLinkInput[];
     tokens: TokenInput[];
+    problem?: SerializedProblemContext;
 }
 
 export interface PFairnessAppConfig {
@@ -107,6 +122,11 @@ export interface PFairnessAppConfig {
     tokens: TokenInput[];
     initialParameter: number;
     problem: ProblemDefinition;
+    // Called whenever the problem in use changes from inside the app — which
+    // includes undoing a switch, where no control was touched. The owner of the
+    // problem dropdown needs to hear about it or it would show a problem the
+    // rules are no longer applying.
+    onProblemChange?(problem: ProblemDefinition): void;
 }
 
 export interface PFairnessApp {
@@ -117,12 +137,19 @@ export interface PFairnessApp {
     setNeighborhoodCountVisibility(enabled: boolean): void;
     setMoveDirectionVisibility(enabled: boolean): void;
     applyLayout(layout: LayoutMode): void;
+    // Applies a different problem to the graph that is already open. The
+    // parameter is the new problem's own value, since a number means something
+    // different under every problem.
+    setProblem(problem: ProblemDefinition, parameter?: number): void;
     clearNodeSelection(): void;
     undo(): boolean;
     copySelection(): boolean;
     pasteSelection(): boolean;
     saveSelection(): boolean;
     deleteSelection(): boolean;
-    importSelection(file: File): Promise<boolean>;
+    // Resolves to null when the file could not be read. Otherwise it hands back
+    // the problem the file was saved under, if it named one, so the caller that
+    // owns the list of problems can switch to it.
+    importSelection(file: File): Promise<SerializedProblemContext | null>;
     destroy(): void;
 }

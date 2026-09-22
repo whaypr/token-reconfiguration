@@ -11,8 +11,10 @@ import type {
     NodeId,
     LayoutMode,
     InteractionMode,
+    ProblemDefinition,
     PFairnessApp,
     PFairnessAppConfig,
+    SerializedProblemContext,
 } from "./types";
 import { createTouchGestures, TOUCH_HIT_RADIUS_PX } from "./touch-gestures";
 import { applyGraphLayout } from "./layouts";
@@ -48,6 +50,10 @@ type AppUndoSnapshot = {
         parameter: number;
         nextNodeId: number;
     };
+    // Held by reference: the definitions are module constants, so a snapshot
+    // cannot drift from the problem it names. Undo has to carry it because
+    // switching the problem is a change the user should be able to take back.
+    problem: ProblemDefinition;
     selectedTokenId: string | null;
     selection: SelectionStateSnapshot;
 };
@@ -62,7 +68,8 @@ export function createPFairnessApp({
     links,
     tokens: initialTokens,
     initialParameter,
-    problem,
+    problem: initialProblem,
+    onProblemChange,
 }: PFairnessAppConfig): PFairnessApp {
     const svg = d3.select(svgSelector) as unknown as SvgSelection;
     const pInput = document.querySelector(parameterInputSelector) as HTMLInputElement;
@@ -82,7 +89,7 @@ export function createPFairnessApp({
     let width = 0;
     let height = 0;
 
-    const graph = createGraph(nodes, links, initialTokens, initialParameter, problem.rules, width, height);
+    const graph = createGraph(nodes, links, initialTokens, initialParameter, initialProblem.rules, width, height);
 
     const graphNodes: ForceNodeDatum[] = graph.nodes as ForceNodeDatum[];
     const graphLinks: ForceLinkDatum[] = graph.links as ForceLinkDatum[];
@@ -94,6 +101,9 @@ export function createPFairnessApp({
     let overlayRefreshPaused = false;
     let currentTransform: ZoomTransform = d3.zoomIdentity;
     let parameter = initialParameter;
+    // Reassigned by setProblem. The graph keeps its vertices across a switch,
+    // so the problem is state of the session, not of the graph's construction.
+    let currentProblem = initialProblem;
     const undoStack: AppUndoSnapshot[] = [];
     let undoGroupDepth = 0;
 
@@ -136,6 +146,7 @@ export function createPFairnessApp({
         () => updateNodeClasses(),
         () => updateTokenClasses(),
         recordUndoState,
+        () => currentProblem,
     );
 
     const linkForce = d3.forceLink<ForceNodeDatum, ForceLinkDatum>(graphLinks)
@@ -390,7 +401,7 @@ export function createPFairnessApp({
                 return;
             }
             if (!addTokenAtNode(nodeId)) {
-                setStatus(`A token cannot stand on node ${nodeId} — it would violate the ${problem.name} rule.`);
+                setStatus(`A token cannot stand on node ${nodeId} — it would violate the ${currentProblem.name} rule.`);
             }
             return;
         }
@@ -515,7 +526,7 @@ export function createPFairnessApp({
 
     function moveToken(tokenId: string, targetNodeId: NodeId): boolean {
         if (!graph.canMoveToken(tokenId, targetNodeId)) {
-            setStatus(`That move would violate the ${problem.name} rule, so it was blocked.`);
+            setStatus(`That move would violate the ${currentProblem.name} rule, so it was blocked.`);
             return false;
         }
 
@@ -945,7 +956,7 @@ export function createPFairnessApp({
 
         if (!graph.isConfigurationValid(graph.tokens, nextParameter)) {
             pInput.value = String(parameter);
-            setStatus(`${problem.parameterLabel} = ${nextParameter} would make the current configuration invalid, so it was rejected.`);
+            setStatus(`${currentProblem.parameterLabel} = ${nextParameter} would make the current configuration invalid, so it was rejected.`);
             return;
         }
 
@@ -956,7 +967,65 @@ export function createPFairnessApp({
         refreshOverlayState();
         updateNodeClasses();
         updateTokenClasses();
-        setStatus(`${problem.parameterLabel} updated to ${parameter}.`);
+        setStatus(`${currentProblem.parameterLabel} updated to ${parameter}.`);
+    }
+
+    // Changing the problem is a change to the session, so it travels with the
+    // graph rather than replacing it: the vertices, their positions and the
+    // tokens on them are exactly what the user wants to keep. The parameter
+    // moves with it because a value belongs to one problem's scale — p = 3 of
+    // p-Fairness and d = 3 of a distance rule are different demands, and
+    // carrying one into the other would silently reinterpret it.
+    // Brings the problem, the parameter and the input element into line with
+    // each other. Shared by switching the problem and by undoing a switch, so
+    // the two cannot leave the parameter box describing a different problem
+    // than the rules the graph is using.
+    // The parameter box belongs to a problem: its bounds and its step come from
+    // there, so they move whenever the problem or the value does. One owner
+    // keeps the box from describing a different problem than the rules do.
+    function syncParameterInput(problem: ProblemDefinition, value: number): void {
+        pInput.min = String(problem.minParameter);
+        pInput.max = String(problem.maxParameter);
+        pInput.step = String(problem.parameterStep);
+        pInput.value = String(value);
+    }
+
+    function adoptProblem(nextProblem: ProblemDefinition, nextParameter: number): void {
+        const changed = nextProblem.id !== currentProblem.id;
+        currentProblem = nextProblem;
+        graph.rules = nextProblem.rules;
+        parameter = nextParameter;
+        graph.setParameter(nextParameter);
+        syncParameterInput(nextProblem, nextParameter);
+        refreshTokenMoveSelectionState();
+        refreshOverlayState();
+        updateNodeClasses();
+        updateTokenClasses();
+
+        // Undo reaches here without going through any control, so this is the
+        // only place the change can be announced from.
+        if (changed) {
+            onProblemChange?.(nextProblem);
+        }
+    }
+
+    function setProblem(nextProblem: ProblemDefinition, nextParameter = nextProblem.defaultParameter): void {
+        if (nextProblem.id === currentProblem.id && nextParameter === parameter) {
+            return;
+        }
+
+        const switchedProblem = nextProblem.id !== currentProblem.id;
+        recordUndoState();
+        // A configuration can be legal under one problem and not under another,
+        // and dropping a token the user placed would be worse than admitting the
+        // pair does not fit: the tokens stay, and the status line says so.
+        const violated = !graph.isConfigurationValid(graph.tokens, nextParameter);
+        adoptProblem(nextProblem, nextParameter);
+        const label = nextProblem.parameterLabel;
+        const opening = switchedProblem
+            ? `${nextProblem.name} applied to this graph with ${label} = ${nextParameter}`
+            : `${label} = ${nextParameter}`;
+        setStatus(violated ? `${opening}. Some tokens now break the rule.` : `${opening}.`);
     }
 
     function setNeighborhoodCountVisibility(enabled: boolean): void {
@@ -1011,16 +1080,16 @@ export function createPFairnessApp({
         };
     }
 
-    async function importSelection(file: File): Promise<boolean> {
-        const pastedNodeIds = await selection.importSelection(file, getViewportCenter());
+    async function importSelection(file: File): Promise<SerializedProblemContext | null> {
+        const imported = await selection.importSelection(file, getViewportCenter());
 
-        if (!pastedNodeIds) {
-            return false;
+        if (!imported) {
+            return null;
         }
 
         selectedTokenId = null;
-        refreshGraphAfterMutation(`Imported ${pastedNodeIds.size} vertices.`);
-        return true;
+        refreshGraphAfterMutation(`Imported ${imported.nodeIds.size} vertices.`);
+        return imported.problem ?? null;
     }
 
     function deleteSelection(): boolean {
@@ -1080,6 +1149,7 @@ export function createPFairnessApp({
                 parameter,
                 nextNodeId: graph.nextNodeId,
             },
+            problem: currentProblem,
             selectedTokenId,
             selection: selection.createSnapshot(),
         };
@@ -1093,8 +1163,9 @@ export function createPFairnessApp({
         graph.nextNodeId = snapshot.graph.nextNodeId;
         graph.refreshNodeIndex();
 
-        parameter = snapshot.graph.parameter;
-        pInput.value = String(snapshot.graph.parameter);
+        // One call brings rules, parameter and the input element back together;
+        // assigning them one at a time here is how they could drift apart.
+        adoptProblem(snapshot.problem, snapshot.graph.parameter);
         selectedTokenId = snapshot.selectedTokenId;
         // An armed edge source could silently point at a different vertex after
         // the restore — drop it instead of guessing.
@@ -1106,7 +1177,7 @@ export function createPFairnessApp({
         updateTokenClasses();
     }
 
-    pInput.value = String(parameter);
+    syncParameterInput(currentProblem, parameter);
     pInput.addEventListener("change", handlePChange);
     svg.call(zoomBehavior);
     // Double-tap zoom off in every mode — and background's own "dblclick"
@@ -1200,6 +1271,7 @@ export function createPFairnessApp({
         setNeighborhoodCountVisibility,
         setMoveDirectionVisibility,
         applyLayout,
+        setProblem,
         clearNodeSelection() {
             selection.clearNodeSelection();
         },

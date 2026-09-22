@@ -6,7 +6,9 @@ export class Graph {
     public readonly links: GraphLink[];
     public tokens: GraphToken[];
     public parameter: number;
-    public readonly rules: ProblemRules;
+    // Swappable: the problem can be changed under a graph, and rebuilding the
+    // graph to do it would throw away the arrangement the user made.
+    public rules: ProblemRules;
     public nextNodeId: number;
     public nodeById: Map<NodeId, GraphNode>;
 

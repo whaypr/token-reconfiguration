@@ -1,6 +1,13 @@
 import type { Graph } from "./graph";
-import type { GraphNode, NodeId, SerializedSubgraph } from "./types";
-import { pasteSerializedSubgraph, serializeSelectedSubgraph } from "./subgraph";
+import type { GraphNode, NodeId, ProblemDefinition, SerializedProblemContext, SerializedSubgraph } from "./types";
+import { pasteSerializedSubgraph, readProblemContext, serializeSelectedSubgraph } from "./subgraph";
+
+// A file's graph plus the problem it was drawn under, which is optional because
+// files written before that field existed simply have none.
+export interface ImportedSelection {
+    nodeIds: Set<NodeId>;
+    problem?: SerializedProblemContext;
+}
 
 export interface SelectionStateSnapshot {
     selectedNodeIds: NodeId[];
@@ -20,6 +27,9 @@ export class SelectionManager {
         private updateNodeClasses: () => void,
         private updateTokenClasses: () => void,
         private recordUndoState: () => void,
+        // Read when a selection is written out, not captured at construction:
+        // the problem can change underneath a graph that outlives the change.
+        private getProblem: () => ProblemDefinition,
     ) {}
 
     createSnapshot(): SelectionStateSnapshot {
@@ -84,7 +94,7 @@ export class SelectionManager {
     }
 
     copySelection(): boolean {
-        this.clipboardSelection = serializeSelectedSubgraph(this.graph, new Set(this.selectedNodeIds));
+        this.clipboardSelection = serializeSelectedSubgraph(this.graph, new Set(this.selectedNodeIds), this.getProblem());
 
         if (!this.clipboardSelection) {
             this.setStatus("Select at least one vertex before copying.");
@@ -111,7 +121,7 @@ export class SelectionManager {
     }
 
     saveSelection(): boolean {
-        const selectionData = serializeSelectedSubgraph(this.graph, new Set(this.selectedNodeIds));
+        const selectionData = serializeSelectedSubgraph(this.graph, new Set(this.selectedNodeIds), this.getProblem());
         if (!selectionData) {
             this.setStatus("Select at least one vertex before saving.");
             return false;
@@ -128,7 +138,7 @@ export class SelectionManager {
         return true;
     }
 
-    async importSelection(file: File, targetCenter: { x: number; y: number } | null = null): Promise<Set<NodeId> | null> {
+    async importSelection(file: File, targetCenter: { x: number; y: number } | null = null): Promise<ImportedSelection | null> {
         try {
             const text = await file.text();
             const data = JSON.parse(text) as SerializedSubgraph;
@@ -158,7 +168,7 @@ export class SelectionManager {
             const pastedNodeIds = pasteSerializedSubgraph(this.graph, data, offsetX, offsetY);
             this.applyPastedSelection(pastedNodeIds);
             this.setStatus(`Imported ${data.nodes.length} vertices.`);
-            return pastedNodeIds;
+            return { nodeIds: pastedNodeIds, problem: readProblemContext(data) };
         } catch {
             this.setStatus("Could not read that selection file.");
             return null;
@@ -199,6 +209,9 @@ export class SelectionManager {
             nodes: selectionData.nodes.map(node => ({ ...node })),
             links: selectionData.links.map(link => ({ ...link })),
             tokens: selectionData.tokens.map(token => ({ ...token })),
+            // Carried through so an undo step does not quietly drop the problem
+            // a copied selection came from.
+            ...(selectionData.problem ? { problem: { ...selectionData.problem } } : {}),
         };
     }
 }
