@@ -40,7 +40,14 @@ export function serializeSelectedSubgraph(
 
     return {
         version: 1,
-        nodes: selectedNodes.map(node => ({ id: node.id, x: node.x, y: node.y })),
+        // A mark is written only where there is one, so a selection with nothing
+        // marked saves byte-for-byte as it did before marks existed. The older
+        // build reading this file never asks about the key and so never sees it.
+        nodes: selectedNodes.map(node => (
+            node.highlighted
+                ? { id: node.id, x: node.x, y: node.y, highlighted: true }
+                : { id: node.id, x: node.x, y: node.y }
+        )),
         links: selectedLinks.map(link => ({
             source: graph.getLinkEndpoint(link.source),
             target: graph.getLinkEndpoint(link.target),
@@ -103,6 +110,7 @@ export function pasteSerializedSubgraph(
             fy: node.y + offsetY,
             anchorX: node.x + offsetX,
             anchorY: node.y + offsetY,
+            ...(node.highlighted ? { highlighted: true } : {}),
         };
 
         graph.nodes.push(pastedNode);

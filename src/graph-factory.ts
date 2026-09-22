@@ -29,6 +29,11 @@ export function createGraphNode(
         fy: y,
         anchorX: x,
         anchorY: y,
+        // Written only when set, so a vertex that was never marked stays exactly
+        // the object it was before the mark existed. This is the one place a
+        // scenario's marks are picked up: the node is assembled field by field
+        // here rather than copied from the input.
+        ...(normalized.highlighted ? { highlighted: true } : {}),
     };
 }
 

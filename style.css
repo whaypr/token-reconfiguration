@@ -10,6 +10,10 @@
     --accent-soft: #e3f2ef;
     --warm: #f2b84b;
     --danger: #b44d4d;
+    /* Deliberately outside the hint block below: this one paints no vertex and
+       has no switch, so sharing a list with the hinted colours would imply a
+       swatch that does not exist. */
+    --highlight-vertex: #7dd3fc;
     /* Vertex hints. Shared by the canvas fills and the control-panel swatches
        so the two can never disagree about what a switch paints. */
     --slot: #d7dce3;
@@ -527,6 +531,14 @@ svg:active {
     stroke: #999;
     stroke-opacity: 0.6;
     stroke-width: 2px;
+}
+
+/* The square under a vertex the reader marked by hand. It sits between the links
+   and the vertices, and takes no pointer events: a mark is something you look at,
+   and every gesture on it belongs to the vertex it stands under. */
+.node-highlight {
+    fill: var(--highlight-vertex);
+    pointer-events: none;
 }
 
 .node {

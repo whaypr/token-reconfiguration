@@ -204,7 +204,12 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
 
     function createDragBehavior<TDatum>(subjectAccessor: (event: D3DragEvent<SVGCircleElement, TDatum, ForceNodeDatum>, datum: TDatum) => ForceNodeDatum): d3.DragBehavior<SVGCircleElement, TDatum, ForceNodeDatum> {
         return d3.drag<SVGCircleElement, TDatum, ForceNodeDatum>()
-            .filter((event: MouseEvent) => event.button === 0 && !event.ctrlKey)
+            // Alt is refused alongside Ctrl for the same reason: a press holding
+            // either is not a drag. d3-drag runs its own listeners in the capture
+            // phase and swallows the click that follows, so letting Alt through
+            // here would eat the Alt+click that marks a vertex — and record an
+            // undo step for a vertex that never moved.
+            .filter((event: MouseEvent) => event.button === 0 && !event.ctrlKey && !event.altKey)
             .subject(subjectAccessor)
             .on("start", handleNodeDragStart)
             .on("drag", handleNodeDragged)

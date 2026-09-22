@@ -22,6 +22,10 @@ export interface ScenarioNodeInput {
     id: NodeId;
     x?: number;
     y?: number;
+    // A mark the reader put there by hand, drawn as a square under the vertex.
+    // Absent means unmarked rather than false, so a file or scenario that predates
+    // it needs no mention of it. It carries no meaning for any problem's rules.
+    highlighted?: boolean;
 }
 
 export interface GraphLinkInput {
@@ -90,10 +94,13 @@ export interface ProblemDefinition {
     rules: ProblemRules;
 }
 
+// `highlighted` is optional for the same reason `problem` is below: a file
+// written before either existed is not wrong, it simply says nothing about them.
 export interface SerializedSubgraphNode {
     id: NodeId;
     x: number;
     y: number;
+    highlighted?: boolean;
 }
 
 // The problem a file was saved under. `id` is what a later load matches on, so
@@ -105,8 +112,8 @@ export interface SerializedProblemContext {
     parameter: number;
 }
 
-// `version` stays at 1 and the context is optional on purpose. A reader that
-// only knows version 1 ignores an extra key, so new files still open in an
+// `version` stays at 1 and the newer fields are optional on purpose. A reader
+// that only knows version 1 ignores an extra key, so new files still open in an
 // older build, and a file with no context is simply one whose problem is
 // unknown — the same thing an old file is. Bumping the version would have made
 // new files unreadable to the build that checks `version === 1`.

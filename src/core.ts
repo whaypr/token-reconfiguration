@@ -41,6 +41,7 @@ type GraphNodeSnapshot = {
     fy?: number;
     anchorX: number;
     anchorY: number;
+    highlighted?: boolean;
 };
 
 type AppUndoSnapshot = {
@@ -60,6 +61,11 @@ type AppUndoSnapshot = {
 };
 
 type SvgSelection = Selection<SVGSVGElement, unknown, null, undefined>;
+
+// The side of the square drawn under a marked vertex. A vertex is r=20, so 44
+// leaves it a visible border of blue on every side instead of a square the
+// circle hides almost entirely.
+const HIGHLIGHT_SQUARE_SIZE = 44;
 
 // Does this batch of vertices arrive with its own drawing? A vertex that was
 // only named (an id, or no coordinates) is placed by the factory relative to a
@@ -134,6 +140,10 @@ export function createPFairnessApp({
 
     const graphViewport = svg.append("g").attr("class", "graph-viewport");
     const linkLayer = graphViewport.append("g").attr("class", "link-layer");
+    // Its own layer, below the vertices, because the mark is meant to sit under a
+    // vertex rather than on it. Below the links as well would let a square punch a
+    // hole through the edges running into the vertex it marks.
+    const highlightLayer = graphViewport.append("g").attr("class", "highlight-layer");
     const nodeLayer = graphViewport.append("g").attr("class", "node-layer");
     const tokenLayer = graphViewport.append("g").attr("class", "token-layer");
     const overlayLayer = graphViewport.append("g").attr("class", "overlay-layer");
@@ -200,6 +210,15 @@ export function createPFairnessApp({
             if (event.type.startsWith("touch")) {
                 return (event as TouchEvent).touches.length <= 2;
             }
+
+            // Alt is refused so that Alt+left-click can mean something of its own
+            // on the canvas: accepted here, the press would begin a pan the user
+            // never asked for, and a pan that ends without moving still counts as
+            // a gesture the click has to survive.
+            if (event.altKey) {
+                return false;
+            }
+
             return event.type === "wheel" || (event.type === "mousedown" && (event as MouseEvent).button === 0) || event.type === "dblclick";
         })
         .on("zoom", (event: D3ZoomEvent<SVGSVGElement, unknown>) => {
@@ -662,6 +681,46 @@ export function createPFairnessApp({
             });
     }
 
+    // The squares under marked vertices. Only the marked ones get an element, so
+    // the layer holds nothing at all on an unmarked graph and a deleted vertex's
+    // square leaves with it — the mark lives on the node, so there is no
+    // collection of ids here to go stale when a vertex is removed.
+    function renderNodeHighlights(): void {
+        highlightLayer.selectAll<SVGRectElement, ForceNodeDatum>(".node-highlight")
+            .data(graphNodes.filter(node => node.highlighted), d => String(d.id))
+            .join(
+                enter => enter.append("rect")
+                    .attr("class", "node-highlight")
+                    .attr("width", HIGHLIGHT_SQUARE_SIZE)
+                    .attr("height", HIGHLIGHT_SQUARE_SIZE),
+                update => update,
+                exit => exit.remove(),
+            );
+
+        positionNodeHighlights();
+    }
+
+    function positionNodeHighlights(): void {
+        highlightLayer.selectAll<SVGRectElement, ForceNodeDatum>(".node-highlight")
+            .attr("x", d => d.x - HIGHLIGHT_SQUARE_SIZE / 2)
+            .attr("y", d => d.y - HIGHLIGHT_SQUARE_SIZE / 2);
+    }
+
+    function toggleNodeHighlight(nodeId: NodeId): void {
+        const nodeData = graph.nodeById.get(nodeId);
+
+        if (!nodeData) {
+            return;
+        }
+
+        recordUndoState();
+        nodeData.highlighted = !nodeData.highlighted;
+        renderNodeHighlights();
+        setStatus(nodeData.highlighted
+            ? `Vertex ${nodeId} highlighted.`
+            : `Highlight removed from vertex ${nodeId}.`);
+    }
+
     function renderNeighborhoodCountLabels(): void {
         if (overlayRefreshPaused || !showNeighborhoodCounts) {
             neighborhoodCountLayer.selectAll<SVGTextElement, GraphNode>(".neighborhood-count").remove();
@@ -759,6 +818,11 @@ export function createPFairnessApp({
             .attr("cx", d => d.x)
             .attr("cy", d => d.y);
 
+        // Here rather than only where a mark is toggled, because this is the one
+        // place every mover of a vertex passes through — drag, a one-time layout,
+        // a canvas resize and the simulation's own ticks.
+        positionNodeHighlights();
+
         if (pendingEdgeSourceId !== null) {
             const sourceNode = getNodeById(pendingEdgeSourceId);
             if (sourceNode) {
@@ -831,6 +895,16 @@ export function createPFairnessApp({
             .on("click", (event: MouseEvent, d: GraphToken) => {
                 // One handler only — a second .on("click") on the same
                 // selection would silently replace this one.
+                if (event.altKey) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    // The token is not what gets marked — it stands on the vertex
+                    // the user meant, and a token cannot carry a mark of its own
+                    // that outlives it.
+                    toggleNodeHighlight(d.nodeId);
+                    return;
+                }
+
                 if (event.ctrlKey) {
                     event.preventDefault();
                     event.stopPropagation();
@@ -929,6 +1003,16 @@ export function createPFairnessApp({
         nodeSelection
             .call(interactions.nodeDrag)
             .on("click", (event: MouseEvent, d: GraphNode) => {
+                // Before Ctrl, so a press somehow carrying both modifiers does
+                // one named thing rather than leaving the order of two independent
+                // ifs to decide it.
+                if (event.altKey) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toggleNodeHighlight(d.id);
+                    return;
+                }
+
                 if (event.ctrlKey) {
                     event.preventDefault();
                     event.stopPropagation();
@@ -965,6 +1049,7 @@ export function createPFairnessApp({
     function refreshGraphAfterMutation(message?: string): void {
         syncSimulation();
         renderGraph();
+        renderNodeHighlights();
         renderTokens();
         refreshTokenMoveSelectionState();
         refreshOverlayState();
@@ -1169,6 +1254,11 @@ export function createPFairnessApp({
                     fy: node.fy,
                     anchorX: node.anchorX,
                     anchorY: node.anchorY,
+                    // Listed by name like every field above, so a mark added after
+                    // this snapshot was taken is undone rather than surviving the
+                    // restore. Spreading the node instead would carry it along by
+                    // accident, which is the opposite of a snapshot.
+                    highlighted: node.highlighted,
                 })),
                 links: graph.links.map(link => ({
                     source: graph.getLinkEndpoint(link.source),
