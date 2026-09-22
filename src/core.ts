@@ -341,6 +341,15 @@ export function createPFairnessApp({
     function handleTouchTapNode(nodeId: NodeId): void {
         if (interactionMode === "tokens") {
             const token = graph.getTokenAtNode(nodeId);
+            // A token is selected and the tapped vertex carries a DIFFERENT
+            // token: move the selection to it instead of refusing the tap.
+            // The selected token's own vertex is left out so that tap still
+            // toggles it off, and legal destinations are left out so a future
+            // rule that allows moving onto an occupied vertex still moves.
+            if (selectedTokenId && token && token.id !== selectedTokenId && !legalMoveTargets.has(nodeId)) {
+                selectToken(token.id);
+                return;
+            }
             if (selectedTokenId) {
                 handleNodeClick(nodeId);
                 return;
