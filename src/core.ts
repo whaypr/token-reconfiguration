@@ -2,7 +2,9 @@ import * as d3 from "d3";
 import type { D3ZoomEvent, ZoomTransform } from "d3-zoom";
 import type { Selection } from "d3-selection";
 import type { ForceLink, SimulationLinkDatum, SimulationNodeDatum } from "d3-force";
+import { DEFAULT_COLOR_HINTS } from "./types";
 import type {
+    ColorHints,
     GraphLink,
     GraphNode,
     GraphToken,
@@ -155,9 +157,10 @@ export function createPFairnessApp({
 
     let interactionMode: InteractionMode = "tokens";
     let pendingEdgeSourceId: NodeId | null = null;
-    // Off = tokens graph is a puzzle: colours that hint where tokens can move
-    // or go hide behind the neutral .empty fill. Movement rules still apply.
-    let colorsEnabled = true;
+    // Which vertex hints are painted, one switch per hint. A switch that is
+    // off leaves its vertices on the neutral .slot fill — the rules behind the
+    // hint still apply, so an uncoloured graph stays exactly as legal.
+    let colorHints: ColorHints = { ...DEFAULT_COLOR_HINTS };
 
     const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.15, 3])
@@ -736,20 +739,25 @@ export function createPFairnessApp({
         nodeLayer.selectAll<SVGCircleElement, GraphNode>(".node")
             .attr("class", d => {
                 const token = graph.getTokenAtNode(d.id);
-                const classes = ["node"];
+                // Every vertex starts on the neutral slot colour; a hint whose
+                // switch is on then overrides it. A hint being off means its
+                // class is absent, so the CSS never has to know about the
+                // switches.
+                const classes = ["node", "slot"];
 
                 if (selection.isNodeSelected(d.id)) {
                     classes.push("region-selected");
                 }
 
                 if (!token) {
-                    classes.push("empty");
-                    if (colorsEnabled && graph.canPlaceTokenAtNode(d.id)) {
+                    if (colorHints.placeable && graph.canPlaceTokenAtNode(d.id)) {
                         classes.push("placeable");
                     }
                 } else if (isTokenFrozen(token.id)) {
-                    classes.push("frozen");
-                } else {
+                    if (colorHints.frozen) {
+                        classes.push("frozen");
+                    }
+                } else if (colorHints.movable) {
                     classes.push("mobile");
                 }
 
@@ -759,10 +767,6 @@ export function createPFairnessApp({
 
                 if (legalMoveTargets.has(d.id)) {
                     classes.push("selectable");
-                }
-
-                if (!colorsEnabled) {
-                    classes.push("colors-off");
                 }
 
                 return classes.join(" ");
@@ -1165,15 +1169,15 @@ export function createPFairnessApp({
         }
     }
 
-    function setColorsEnabled(enabled: boolean): void {
-        colorsEnabled = enabled;
+    function setColorHints(hints: ColorHints): void {
+        colorHints = { ...hints };
         updateNodeClasses();
     }
 
     return {
         setStatus,
         setInteractionMode,
-        setColorsEnabled,
+        setColorHints,
         setRepulsionEnabled,
         setNeighborhoodCountVisibility,
         setMoveDirectionVisibility,

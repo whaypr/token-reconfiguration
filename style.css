@@ -10,6 +10,12 @@
     --accent-soft: #e3f2ef;
     --warm: #f2b84b;
     --danger: #b44d4d;
+    /* Vertex hints. Shared by the canvas fills and the control-panel swatches
+       so the two can never disagree about what a switch paints. */
+    --slot: #d7dce3;
+    --hint-movable: #11b119;
+    --hint-frozen: #dc0025a4;
+    --hint-placeable: #f2b84b;
 }
 
 * {
@@ -224,6 +230,48 @@ h1 {
     flex-wrap: wrap;
 }
 
+/* The three vertex-colour switches belong to one choice, so they read as a
+   block: label above, one switch per line, each carrying the swatch it paints. */
+.toggle-group {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.toggle-group-label {
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.toggle-column {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.color-swatch {
+    width: 12px;
+    height: 12px;
+    margin-left: auto;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    flex: none;
+}
+
+.swatch-movable {
+    background: var(--hint-movable);
+}
+
+.swatch-frozen {
+    background: var(--hint-frozen);
+}
+
+.swatch-placeable {
+    background: var(--hint-placeable);
+}
+
 .mode-toggle {
     display: inline-flex;
     gap: 2px;
@@ -380,28 +428,24 @@ svg:active {
     cursor: move;
 }
 
-.node.empty {
-    fill: #d7dce3;
+/* Every vertex carries .slot, so it is the colour a turned-off hint falls back
+   to. The three hint classes below only ever override it. */
+.node.slot {
+    fill: var(--slot);
 }
 
 .node.placeable {
-    fill: #FF9800;
+    fill: var(--hint-placeable);
 }
 
 .node.mobile {
-    fill: #4CAF50;
+    fill: var(--hint-movable);
 }
 
+/* The complement of the movable green, chosen so a token that cannot move
+   stands apart from one that can even at a glance across the canvas. */
 .node.frozen {
-    fill: #F44336;
-}
-
-/* Colors off (play mode): hide the mobile/frozen hints, render token slots
-   neutrally like empty ones. The .selectable/.selected strokes still apply
-   (different property, and they come later anyway). */
-.node.colors-off.mobile,
-.node.colors-off.frozen {
-    fill: #d7dce3;
+    fill: var(--hint-frozen);
 }
 
 .node.selectable {

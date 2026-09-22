@@ -1,7 +1,8 @@
 import { createPFairnessApp } from "./core";
 import { problems } from "./problems";
 import { scenarios } from "./scenarios";
-import type { InteractionMode, LayoutMode, PFairnessApp } from "./types";
+import { DEFAULT_COLOR_HINTS } from "./types";
+import type { ColorHints, InteractionMode, LayoutMode, PFairnessApp } from "./types";
 
 function bootstrap(): void {
     const scenarioSelect = document.getElementById("scenarioSelect") as HTMLSelectElement;
@@ -12,7 +13,9 @@ function bootstrap(): void {
     const repulsionToggle = document.getElementById("repulsionToggle") as HTMLInputElement;
     const neighborhoodCountToggle = document.getElementById("neighborhoodCountToggle") as HTMLInputElement;
     const moveDirectionToggle = document.getElementById("moveDirectionToggle") as HTMLInputElement;
-    const colorsToggle = document.getElementById("colorsToggle") as HTMLInputElement;
+    const colorMovableToggle = document.getElementById("colorMovableToggle") as HTMLInputElement;
+    const colorFrozenToggle = document.getElementById("colorFrozenToggle") as HTMLInputElement;
+    const colorPlaceableToggle = document.getElementById("colorPlaceableToggle") as HTMLInputElement;
     const modeTokensButton = document.getElementById("modeTokensButton") as HTMLButtonElement;
     const modeGraphButton = document.getElementById("modeGraphButton") as HTMLButtonElement;
     const copySelectionButton = document.getElementById("copySelectionButton") as HTMLButtonElement;
@@ -23,7 +26,7 @@ function bootstrap(): void {
     const deleteSelectionButton = document.getElementById("deleteSelectionButton") as HTMLButtonElement;
     const selectionImportInput = document.getElementById("selectionImportInput") as HTMLInputElement;
 
-    if (!scenarioSelect || !problemSelect || !parameterLabel || !parameterDescription || !layoutSelect || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !colorsToggle || !modeTokensButton || !modeGraphButton || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0 || problems.length === 0) {
+    if (!scenarioSelect || !problemSelect || !parameterLabel || !parameterDescription || !layoutSelect || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !colorMovableToggle || !colorFrozenToggle || !colorPlaceableToggle || !modeTokensButton || !modeGraphButton || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0 || problems.length === 0) {
         window.setTimeout(bootstrap, 0);
         return;
     }
@@ -50,8 +53,12 @@ function bootstrap(): void {
         currentApp?.setInteractionMode(mode);
     }
 
-    function applyDisableColors(disabled: boolean): void {
-        currentApp?.setColorsEnabled(!disabled);
+    function readColorHints(): ColorHints {
+        return {
+            movable: colorMovableToggle.checked,
+            frozen: colorFrozenToggle.checked,
+            placeable: colorPlaceableToggle.checked,
+        };
     }
 
     function applyControlsToApp(): void {
@@ -64,7 +71,7 @@ function bootstrap(): void {
         currentApp.setNeighborhoodCountVisibility(neighborhoodCountToggle.checked);
         currentApp.setMoveDirectionVisibility(moveDirectionToggle.checked);
         currentApp.setInteractionMode(interactionMode);
-        currentApp.setColorsEnabled(!colorsToggle.checked);
+        currentApp.setColorHints(readColorHints());
     }
 
     function renderScenarioOptions(): void {
@@ -142,9 +149,13 @@ function bootstrap(): void {
         }
     });
 
-    colorsToggle.addEventListener("change", () => {
-        applyDisableColors(colorsToggle.checked);
-    });
+    // Three switches, one value object: whichever changes, the app is handed
+    // the whole set, so it can never see a half-applied group of hints.
+    for (const hintToggle of [colorMovableToggle, colorFrozenToggle, colorPlaceableToggle]) {
+        hintToggle.addEventListener("change", () => {
+            currentApp?.setColorHints(readColorHints());
+        });
+    }
 
     modeTokensButton.addEventListener("click", () => {
         applyInteractionMode("tokens");
@@ -218,7 +229,13 @@ function bootstrap(): void {
     repulsionToggle.checked = false;
     neighborhoodCountToggle.checked = false;
     moveDirectionToggle.checked = false;
-    colorsToggle.checked = false;
+    // Assigned rather than left to the HTML `checked` attribute: browsers
+    // restore a form control's previous state across a reload, so the attribute
+    // alone is only an initial value and would not be the default the second
+    // time the page loads.
+    colorMovableToggle.checked = DEFAULT_COLOR_HINTS.movable;
+    colorFrozenToggle.checked = DEFAULT_COLOR_HINTS.frozen;
+    colorPlaceableToggle.checked = DEFAULT_COLOR_HINTS.placeable;
     loadScenario(0);
 }
 

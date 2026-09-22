@@ -5,6 +5,19 @@ export type LayoutMode = "circular" | "tree" | "grid" | "horizontal" | "vertical
 // every desktop gesture works in both modes.
 export type InteractionMode = "tokens" | "graph";
 
+// Which of the three vertex hints are painted. Each one is independent: an off
+// hint leaves that vertex the plain slot grey, and the movement rules behind it
+// are untouched.
+export interface ColorHints {
+    movable: boolean;
+    frozen: boolean;
+    placeable: boolean;
+}
+
+// One source of truth for the starting hints: the app initialises from this and
+// the switches mirror it, so the two cannot drift apart.
+export const DEFAULT_COLOR_HINTS: ColorHints = { movable: true, frozen: false, placeable: true };
+
 export interface ScenarioNodeInput {
     id: NodeId;
     x?: number;
@@ -99,7 +112,7 @@ export interface PFairnessAppConfig {
 export interface PFairnessApp {
     setStatus(message: string): void;
     setInteractionMode(mode: InteractionMode): void;
-    setColorsEnabled(enabled: boolean): void;
+    setColorHints(hints: ColorHints): void;
     setRepulsionEnabled(enabled: boolean): void;
     setNeighborhoodCountVisibility(enabled: boolean): void;
     setMoveDirectionVisibility(enabled: boolean): void;

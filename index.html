@@ -33,11 +33,12 @@
                     Ctrl+left-click to reflect across the y-axis, Ctrl+right-click to reflect across their x-axis.
                 </p>
                 <p>
+                    Tokens on green nodes can move, tokens on purple nodes cannot.
+                    <br>
                     Orange nodes can accept a new token.
                     <br>
-                    Tokens on green nodes can move, tokens on red nodes cannot move.
-                    <br>
-                    Check Disable colors in the View section to hide these hints.
+                    The Vertex colors switches in the View section turn each of these three hints on or off; a node
+                    whose hint is off is plain grey.
                 </p>
                 <p>
                     Ctrl+left-click a vertex to create a token, do it again to remove it.
@@ -129,10 +130,26 @@
                         <span>Token moves</span>
                     </label>
                 </div>
-                <label class="toggle-field">
-                    <input type="checkbox" id="colorsToggle">
-                    <span>Disable colors</span>
-                </label>
+                <div class="toggle-group" role="group" aria-label="Vertex colors">
+                    <span class="toggle-group-label">Vertex colors</span>
+                    <div class="toggle-column">
+                        <label class="toggle-field">
+                            <input type="checkbox" id="colorMovableToggle">
+                            <span>Movable tokens</span>
+                            <span class="color-swatch swatch-movable" aria-hidden="true"></span>
+                        </label>
+                        <label class="toggle-field">
+                            <input type="checkbox" id="colorFrozenToggle">
+                            <span>Frozen tokens</span>
+                            <span class="color-swatch swatch-frozen" aria-hidden="true"></span>
+                        </label>
+                        <label class="toggle-field">
+                            <input type="checkbox" id="colorPlaceableToggle">
+                            <span>Placeable vertices</span>
+                            <span class="color-swatch swatch-placeable" aria-hidden="true"></span>
+                        </label>
+                    </div>
+                </div>
             </section>
 
             <section class="control-group selection-group">
