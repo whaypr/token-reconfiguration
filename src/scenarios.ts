@@ -1,5 +1,6 @@
-import d3is_puzzle from "./scenarios/d3is_puzzle.json";
-import _2lp_puzzle from "./scenarios/2lp_puzzle.json";
+import d3is_reconfigure from "./scenarios/d3is_reconfigure.json";
+import _2lp_reconfigure from "./scenarios/2lp_reconfigure.json";
+import _2lp_blockAccess from "./scenarios/2lp_blockAccess.json";
 import type { Scenario } from "./types";
 
 // The two drawn scenarios live as JSON rather than as TypeScript literals: they
@@ -12,16 +13,22 @@ import type { Scenario } from "./types";
 // invisible: the graph opens, with fewer tokens than the file says.
 const drawnScenarios: Scenario[] = [
     {
-        ...d3is_puzzle,
-        id: "d3is_puzzle",
-        name: "D3IS Puzzle",
-        description: "",
+        ...d3is_reconfigure,
+        id: "d3is_reconfigure",
+        name: "Distance-3 Independent Set | Move tokens",
+        description: "Goal: Move the yellow tokens to the vertices marked with a blue square.",
     },
     {
-        ..._2lp_puzzle,
-        id: "2lp_puzzle",
-        name: "2-limited Packing Puzzle",
-        description: "",
+        ..._2lp_reconfigure,
+        id: "2lp_reconfigure",
+        name: "2-Fairness | Move tokens",
+        description: "Goal: Move the yellow tokens to the vertices marked with a blue square.",
+    },
+    {
+        ..._2lp_blockAccess,
+        id: "2lp_blockAccess",
+        name: "2-Fairness | Block access",
+        description: "Goal: Prevent the yellow tokens from reaching the vertices marked with a blue square. You are not allowed to delete anything in the given graph.",
     },
 ];
 
