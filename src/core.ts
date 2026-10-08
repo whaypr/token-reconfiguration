@@ -72,6 +72,11 @@ type SvgSelection = Selection<SVGSVGElement, unknown, null, undefined>;
 // circle hides almost entirely.
 const HIGHLIGHT_SQUARE_SIZE = 44;
 
+// How many steps back undo reaches. A snapshot is a full copy of the graph, so
+// this is the only thing that bounds what undo costs in memory: recording one
+// step and taking one step are each a single copy, however deep the stack is.
+const MAX_UNDO_STEPS = 20;
+
 // Does this batch of vertices arrive with its own drawing? A vertex that was
 // only named (an id, or no coordinates) is placed by the factory relative to a
 // canvas it has not been given a size for yet, so a scenario has to have said
@@ -1233,7 +1238,7 @@ export function createTokenReconfigurationApp({
         }
 
         undoStack.push(captureUndoSnapshot());
-        if (undoStack.length > 5) {
+        if (undoStack.length > MAX_UNDO_STEPS) {
             undoStack.shift();
         }
     }
