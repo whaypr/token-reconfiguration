@@ -1,8 +1,11 @@
 import * as d3 from "d3";
-import type { D3DragEvent } from "d3-drag";
-import type { Selection } from "d3-selection";
-import type { Simulation, SimulationNodeDatum } from "d3-force";
-import type { ZoomTransform } from "d3-zoom";
+import type {
+    D3DragEvent,
+    Selection,
+    Simulation,
+    SimulationNodeDatum,
+    ZoomTransform,
+} from "d3";
 import type { GraphNode, GraphToken, NodeId } from "./types";
 import { resolvePointerEvent, SelectionGestureManager } from "./selection-gestures";
 

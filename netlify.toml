@@ -1,0 +1,15 @@
+# How Netlify builds and deploys this site. Settings here override the
+# matching ones in the Netlify UI, so the repository stays the source of truth.
+
+[build]
+command = "pnpm build"
+publish = "dist"
+
+# The install step is not configured here on purpose: Netlify runs
+# `pnpm install --frozen-lockfile` on its own because pnpm-lock.yaml is at the
+# repo root. `pnpm-workspace.yaml` has to stay answerable by more than one pnpm
+# version, since the version Netlify uses is not the one installed locally.
+
+[build.environment]
+# Vite 7 needs Node >= 20.19; 24 matches what the app is developed against.
+NODE_VERSION = "24"

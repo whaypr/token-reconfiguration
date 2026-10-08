@@ -1,7 +1,12 @@
 import * as d3 from "d3";
-import type { D3ZoomEvent, ZoomTransform } from "d3-zoom";
-import type { Selection } from "d3-selection";
-import type { ForceLink, SimulationLinkDatum, SimulationNodeDatum } from "d3-force";
+import type {
+    D3ZoomEvent,
+    ForceLink,
+    Selection,
+    SimulationLinkDatum,
+    SimulationNodeDatum,
+    ZoomTransform,
+} from "d3";
 import { DEFAULT_COLOR_HINTS } from "./types";
 import type {
     ColorHints,

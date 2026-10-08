@@ -1,5 +1,5 @@
 import * as d3 from "d3";
-import type { ZoomTransform } from "d3-zoom";
+import type { ZoomTransform } from "d3";
 import type { GraphNode } from "./types";
 
 // How far the canvas may be pulled in and out. One place for both ends, so a
