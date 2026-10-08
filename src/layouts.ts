@@ -5,11 +5,12 @@ import { Graph } from "./graph";
 // this, and applyGraphLayout below is the only other place a layout appears, so
 // the two cannot drift apart.
 export const LAYOUT_OPTIONS: Array<{ value: LayoutMode; label: string }> = [
+    { value: "line", label: "Line" },
+    { value: "zigzag", label: "Zig-zag" },
+    { value: "grid", label: "Grid" },
     { value: "circle", label: "Circle" },
     { value: "binaryTree", label: "Binary tree" },
     { value: "ternaryTree", label: "Ternary tree" },
-    { value: "grid", label: "Grid" },
-    { value: "horizontal", label: "Horizontal" },
     { value: "spiral", label: "Spiral" },
 ];
 
@@ -68,7 +69,7 @@ function applyGridLayout(context: LayoutContext): void {
     });
 }
 
-function applyHorizontalLayout(context: LayoutContext): void {
+function applyLineLayout(context: LayoutContext): void {
     const orderedNodes = context.graph.getSortedNodes();
 
     if (orderedNodes.length === 0) {
@@ -79,9 +80,25 @@ function applyHorizontalLayout(context: LayoutContext): void {
     const centerY = context.height / 2;
 
     orderedNodes.forEach((node, index) => {
-        const x = (index + 1) * xStep;
+        setNodePosition(node, (index + 1) * xStep, centerY, true);
+    });
+}
+
+// The line above, with every other vertex lifted off it by the same distance,
+// so the vertices alternate between two rows. Same x positions either way.
+function applyZigzagLayout(context: LayoutContext): void {
+    const orderedNodes = context.graph.getSortedNodes();
+
+    if (orderedNodes.length === 0) {
+        return;
+    }
+
+    const xStep = context.width / (orderedNodes.length + 1);
+    const centerY = context.height / 2;
+
+    orderedNodes.forEach((node, index) => {
         const y = centerY + (index % 2 === 0 ? -24 : 24);
-        setNodePosition(node, x, y, true);
+        setNodePosition(node, (index + 1) * xStep, y, true);
     });
 }
 
@@ -194,8 +211,10 @@ export function applyGraphLayout(context: LayoutContext, layout: LayoutMode): vo
         applyKaryTreeLayout(context, 3);
     } else if (layout === "grid") {
         applyGridLayout(context);
-    } else if (layout === "horizontal") {
-        applyHorizontalLayout(context);
+    } else if (layout === "line") {
+        applyLineLayout(context);
+    } else if (layout === "zigzag") {
+        applyZigzagLayout(context);
     } else {
         applySpiralLayout(context);
     }
