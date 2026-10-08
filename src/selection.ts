@@ -131,7 +131,7 @@ export class SelectionManager {
         const downloadUrl = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = downloadUrl;
-        anchor.download = "p-fairness-selection.json";
+        anchor.download = "k-limited-packing-selection.json";
         anchor.click();
         window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
         this.setStatus(`Saved ${selectionData.nodes.length} vertices.`);
@@ -144,7 +144,7 @@ export class SelectionManager {
             const data = JSON.parse(text) as SerializedSubgraph;
 
             if (!data || data.version !== 1 || !Array.isArray(data.nodes) || !Array.isArray(data.links) || !Array.isArray(data.tokens)) {
-                this.setStatus("That file is not a valid p-Fairness selection export.");
+                this.setStatus("That file is not a valid k-Limited Packing selection export.");
                 return null;
             }
 

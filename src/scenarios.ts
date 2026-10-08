@@ -21,13 +21,13 @@ const drawnScenarios: Scenario[] = [
     {
         ..._2lp_reconfigure,
         id: "2lp_reconfigure",
-        name: "2-Fairness | Move tokens",
+        name: "2-Limited Packing | Move tokens",
         description: "Goal: Move the yellow tokens to the vertices marked with a blue square.",
     },
     {
         ..._2lp_blockAccess,
         id: "2lp_blockAccess",
-        name: "2-Fairness | Block access",
+        name: "2-Limited Packing | Block access",
         description: "Goal: Prevent the yellow tokens from reaching the vertices marked with a blue square. You are not allowed to delete anything in the given graph.",
     },
 ];

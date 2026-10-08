@@ -125,7 +125,7 @@ export interface SerializedSubgraph {
     problem?: SerializedProblemContext;
 }
 
-export interface PFairnessAppConfig {
+export interface TokenReconfigurationAppConfig {
     svgSelector: string;
     parameterInputSelector: string;
     statusSelector: string;
@@ -141,7 +141,7 @@ export interface PFairnessAppConfig {
     onProblemChange?(problem: ProblemDefinition): void;
 }
 
-export interface PFairnessApp {
+export interface TokenReconfigurationApp {
     setStatus(message: string): void;
     setInteractionMode(mode: InteractionMode): void;
     setColorHints(hints: ColorHints): void;

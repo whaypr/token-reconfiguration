@@ -1,9 +1,9 @@
-import { createPFairnessApp } from "./core";
+import { createTokenReconfigurationApp } from "./core";
 import { LAYOUT_OPTIONS } from "./layouts";
 import { problems } from "./problems";
 import { scenarios } from "./scenarios";
 import { DEFAULT_COLOR_HINTS } from "./types";
-import type { ColorHints, InteractionMode, PFairnessApp, ProblemDefinition, SerializedProblemContext } from "./types";
+import type { ColorHints, InteractionMode, TokenReconfigurationApp, ProblemDefinition, SerializedProblemContext } from "./types";
 
 function bootstrap(): void {
     const scenarioSelect = document.getElementById("scenarioSelect") as HTMLSelectElement;
@@ -34,7 +34,7 @@ function bootstrap(): void {
         return;
     }
 
-    let currentApp: PFairnessApp | null = null;
+    let currentApp: TokenReconfigurationApp | null = null;
     let currentProblem = problems[0];
     let interactionMode: InteractionMode = "tokens";
 
@@ -132,7 +132,7 @@ function bootstrap(): void {
         currentProblem = scenarioProblem;
         problemSelect.value = String(problems.indexOf(scenarioProblem));
 
-        currentApp = createPFairnessApp({
+        currentApp = createTokenReconfigurationApp({
             svgSelector: "svg",
             parameterInputSelector: "#parameterValue",
             statusSelector: "#status",

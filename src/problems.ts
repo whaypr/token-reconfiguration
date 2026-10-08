@@ -4,9 +4,9 @@ import type { ProblemDefinition } from "./types";
 
 export const problems: ProblemDefinition[] = [
     {
-        id: "p-fairness",
-        name: "p-Fairness",
-        parameterLabel: "p",
+        id: "k-limited-packing",
+        name: "k-Limited Packing",
+        parameterLabel: "k",
         parameterDescription: "Maximum tokens in every closed neighborhood",
         defaultParameter: 2,
         minParameter: 0,
@@ -16,7 +16,7 @@ export const problems: ProblemDefinition[] = [
     },
     {
         id: "distance-d-independent-set",
-        name: "Distance-d independent set",
+        name: "Distance-d Independent Set",
         parameterLabel: "d",
         parameterDescription: "Minimum shortest-path distance between every two tokens",
         defaultParameter: 2,

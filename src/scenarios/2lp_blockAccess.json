@@ -44,8 +44,8 @@
     }
   ],
   "problem": {
-    "id": "p-fairness",
-    "name": "p-Fairness",
+    "id": "p-limited-packing",
+    "name": "p-Limited Packing",
     "parameter": 2
   }
 }

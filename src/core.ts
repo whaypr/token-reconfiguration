@@ -12,8 +12,8 @@ import type {
     LayoutMode,
     InteractionMode,
     ProblemDefinition,
-    PFairnessApp,
-    PFairnessAppConfig,
+    TokenReconfigurationApp,
+    TokenReconfigurationAppConfig,
     SerializedProblemContext,
 } from "./types";
 import { createTouchGestures, TOUCH_HIT_RADIUS_PX } from "./touch-gestures";
@@ -86,7 +86,7 @@ function inputsCarryPositions(nodes: Array<unknown>): boolean {
     });
 }
 
-export function createPFairnessApp({
+export function createTokenReconfigurationApp({
     svgSelector,
     parameterInputSelector,
     statusSelector,
@@ -96,13 +96,13 @@ export function createPFairnessApp({
     initialParameter,
     problem: initialProblem,
     onProblemChange,
-}: PFairnessAppConfig): PFairnessApp {
+}: TokenReconfigurationAppConfig): TokenReconfigurationApp {
     const svg = d3.select(svgSelector) as unknown as SvgSelection;
     const pInput = document.querySelector(parameterInputSelector) as HTMLInputElement;
     const statusElement = document.querySelector(statusSelector) as HTMLElement;
 
     if (!pInput || !statusElement) {
-        throw new Error("p-Fairness app root elements were not found.");
+        throw new Error("Token Reconfiguration app root elements were not found.");
     }
 
     // The canvas owns its own touches (pan/zoom/edit are all manual);
@@ -1087,8 +1087,8 @@ export function createPFairnessApp({
     // Changing the problem is a change to the session, so it travels with the
     // graph rather than replacing it: the vertices, their positions and the
     // tokens on them are exactly what the user wants to keep. The parameter
-    // moves with it because a value belongs to one problem's scale — p = 3 of
-    // p-Fairness and d = 3 of a distance rule are different demands, and
+    // moves with it because a value belongs to one problem's scale — k = 3 of
+    // k-Limited Packing and d = 3 of a distance rule are different demands, and
     // carrying one into the other would silently reinterpret it.
     // Brings the problem, the parameter and the input element into line with
     // each other. Shared by switching the problem and by undoing a switch, so
