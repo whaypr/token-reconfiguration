@@ -126,6 +126,10 @@
                         <span>Token moves</span>
                     </label>
                 </div>
+                <label class="toggle-field">
+                    <input type="checkbox" id="spaceGraphToggle">
+                    <span>Arrangement graph</span>
+                </label>
                 <div class="toggle-group" role="group" aria-label="Vertex colors">
                     <span class="toggle-group-label">Vertex colors</span>
                     <div class="toggle-column">
@@ -178,6 +182,20 @@
                 <div class="canvas-caption-text"><span></span><span>View and edit the graph, move tokens around</span></div>
             </div>
             <svg></svg>
+        </div>
+
+        <div class="space-frame" id="spaceFrame">
+            <div class="canvas-caption">
+                <div class="canvas-caption-text">
+                    <span>Arrangement graph</span>
+                    <span>One dot for every arrangement the rules allow, one line for every single move between
+                        them. The middle dot is where the board started; a ring is one move further out.</span>
+                </div>
+            </div>
+            <div class="space-body">
+                <svg id="spaceSvg"></svg>
+                <div class="space-readout" id="spaceReadout"></div>
+            </div>
         </div>
     </main>
 

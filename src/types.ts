@@ -1,3 +1,9 @@
+// Both imports are types only, which is what lets a board shape live here while
+// the code that reads it lives with the search. Erased at compile time, so there
+// is no import cycle at runtime to trip over.
+import type { BoardReading } from "./configuration-board";
+import type { Occupancy } from "./configuration-space";
+
 export type NodeId = number | string;
 export type LayoutMode = "circle" | "binaryTree" | "ternaryTree" | "grid" | "line" | "zigzag" | "spiral";
 
@@ -141,6 +147,18 @@ export interface TokenReconfigurationAppConfig {
     onProblemChange?(problem: ProblemDefinition): void;
 }
 
+// What changed on the board, as far as anything watching it is concerned. One
+// distinction earns its keep: a token that MOVES lands on an arrangement that was
+// already reachable from where it started, while every other change can alter the
+// set of reachable arrangements outright. A watcher that re-derives its whole
+// picture on a move would throw away seconds of work on every click.
+export type BoardChangeReason =
+    | "token-moved"
+    | "token-added-or-removed"
+    | "graph-changed"
+    | "rules-changed"
+    | "goals-changed";
+
 export interface TokenReconfigurationApp {
     setStatus(message: string): void;
     setInteractionMode(mode: InteractionMode): void;
@@ -163,5 +181,21 @@ export interface TokenReconfigurationApp {
     // the problem the file was saved under, if it named one, so the caller that
     // owns the list of problems can switch to it.
     importSelection(file: File): Promise<SerializedProblemContext | null>;
+
+    // A copy of what is on the board right now, in the shape the configuration
+    // search reads. A copy on purpose: a search outlives the frame it started in,
+    // and edits made while it runs must not reach into a picture half-drawn.
+    readBoard(): BoardReading;
+    // Puts the tokens on the given vertices, taking the board to an arrangement
+    // found elsewhere rather than by a sequence of legal moves. Refused — leaving
+    // the board alone — unless the arrangement is one the rules accept and this
+    // board can hold: same number of tokens, every vertex still present. Records
+    // one undo step, so a jump is always walkable back.
+    applyOccupancy(occupancy: Occupancy): boolean;
+    // Hears about a change the moment the board makes it. Returns the way to stop
+    // hearing. The reason is a hint about how much a listener needs to redo, not
+    // a guarantee: a listener that must be exact re-reads the board regardless.
+    onBoardChange(listener: (reason: BoardChangeReason) => void): () => void;
+
     destroy(): void;
 }

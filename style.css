@@ -42,6 +42,12 @@ body {
     width: min(100%, 1440px);
 }
 
+.workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
 .app-header {
     display: flex;
     align-items: flex-start;
@@ -126,8 +132,8 @@ h1 {
 #controls {
     display: grid;
     grid-template-columns: minmax(250px, 1.2fr) minmax(210px, 0.9fr) minmax(260px, 1fr);
+    flex: 0 0 100%;
     gap: 1px;
-    margin-bottom: 14px;
     border: 1px solid var(--line);
     background: var(--line);
 }
@@ -436,6 +442,9 @@ h1 {
 }
 
 .canvas-frame {
+    /* Shares the open row 4:2 with .space-frame.is-open. */
+    flex: 4 1 0;
+    min-width: 0;
     border: 1px solid var(--line);
     background: var(--panel);
     padding: 10px;
@@ -630,7 +639,128 @@ svg:active {
     stroke-width: 3px;
 }
 
+/* The arrangement graph is a second canvas, hidden until asked for: it is the
+   one part of this app that means nothing before someone has moved a token, and
+   an empty framed box on a demo screen reads as a broken one. On wide screens
+   it shares the row with the main canvas; on narrow screens the column keeps
+   both usable without horizontal scrolling. */
+.space-frame {
+    display: none;
+    min-width: 0;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    padding: 10px;
+}
+
+.space-frame.is-open {
+    display: flex;
+    flex: 2 1 0;
+    flex-direction: column;
+}
+
+.space-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.space-frame .canvas-caption-text {
+    flex-direction: column;
+    gap: 3px;
+}
+
+#spaceSvg {
+    flex: 1;
+    height: auto;
+    min-height: 320px;
+    background: #fbfcfc;
+}
+
+.space-readout {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: var(--muted);
+    padding: 4px;
+}
+
+.space-readout p {
+    margin: 0;
+}
+
+.space-readout p:first-child {
+    color: var(--ink);
+    font-family: "DM Mono", monospace;
+    font-size: 0.74rem;
+}
+
+.space-ring {
+    stroke: #e6ecef;
+    stroke-width: 1px;
+}
+
+.space-edge {
+    stroke: #c6d0d6;
+    stroke-opacity: 0.75;
+    stroke-width: 1px;
+}
+
+.space-node {
+    fill: #9fb0bb;
+    stroke: #ffffff;
+    stroke-width: 1px;
+    cursor: pointer;
+}
+
+/* A legal arrangement whose tokens already fill every marked square. */
+.space-node.is-goal {
+    fill: var(--warm);
+    stroke: #8a6a2a;
+}
+
+/* The arrangement the board is in right now. */
+.space-node.is-current {
+    fill: var(--accent);
+    stroke: #0b3f3a;
+    stroke-width: 2px;
+}
+
+/* Brightness rather than a fill, so hovering an arrangement that is already the
+   current one or a goal still says something. */
+.space-node:hover {
+    filter: brightness(0.78);
+}
+
+.space-descent {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2.5px;
+    stroke-opacity: 0.5;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+
+@media (min-width: 981px) {
+    .workspace {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: stretch;
+    }
+}
+
 @media (max-width: 980px) {
+    .space-body {
+        flex: none;
+    }
+
+    #spaceSvg {
+        flex: none;
+        height: clamp(320px, 48vh, 520px);
+    }
+
     .app-header {
         flex-direction: column;
     }

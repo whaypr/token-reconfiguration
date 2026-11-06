@@ -9,6 +9,7 @@ import type {
 } from "d3";
 import { DEFAULT_COLOR_HINTS } from "./types";
 import type {
+    BoardChangeReason,
     ColorHints,
     GraphLink,
     GraphNode,
@@ -21,6 +22,8 @@ import type {
     TokenReconfigurationAppConfig,
     SerializedProblemContext,
 } from "./types";
+import type { BoardReading } from "./configuration-board";
+import type { Occupancy } from "./configuration-space";
 import { createTouchGestures, TOUCH_HIT_RADIUS_PX } from "./touch-gestures";
 import { applyGraphLayout } from "./layouts";
 import { ZOOM_SCALE_RANGE, fitGraphToCanvas } from "./canvas-view";
@@ -142,6 +145,10 @@ export function createTokenReconfigurationApp({
     let currentProblem = initialProblem;
     const undoStack: AppUndoSnapshot[] = [];
     let undoGroupDepth = 0;
+    // Anything watching the board from outside — today, the panel that draws the
+    // graph of arrangements. A set rather than one callback so a second watcher
+    // can be added without either one having to forward to the other.
+    const boardChangeListeners = new Set<(reason: BoardChangeReason) => void>();
 
     const background = svg.append("rect")
         .attr("class", "graph-background")
@@ -177,6 +184,17 @@ export function createTokenReconfigurationApp({
 
     function setStatus(message: string): void {
         statusElement.textContent = message;
+    }
+
+    // Announced after the change has been made and drawn, so a listener that
+    // reads the board back sees the new state and not the one it replaced. The
+    // notification is the last thing each operation does: nothing on the canvas
+    // depends on a listener finishing, and a watcher that throws loses its
+    // picture rather than the edit.
+    function notifyBoardChanged(reason: BoardChangeReason): void {
+        for (const listener of boardChangeListeners) {
+            listener(reason);
+        }
     }
 
     const selection = new SelectionManager(
@@ -607,6 +625,11 @@ export function createTokenReconfigurationApp({
             setStatus(`Token ${tokenId} moved to node ${targetNodeId}.`);
         }
 
+        // Said apart from every other change on purpose: a legal slide lands on an
+        // arrangement that was already reachable, so a watcher that has the
+        // component drawn already needs to move a marker, not start over.
+        notifyBoardChanged("token-moved");
+
         return true;
     }
 
@@ -624,6 +647,9 @@ export function createTokenReconfigurationApp({
         refreshOverlayState();
         updateNodeClasses();
         setStatus(`Token added at node ${nodeId}.`);
+        // A token appearing or leaving changes how many tokens every arrangement
+        // holds, which is a different board to search.
+        notifyBoardChanged("token-added-or-removed");
         return true;
     }
 
@@ -648,6 +674,7 @@ export function createTokenReconfigurationApp({
         renderTokens();
         refreshOverlayState();
         setStatus(`Token removed from node ${nodeId}.`);
+        notifyBoardChanged("token-added-or-removed");
         return true;
     }
 
@@ -729,6 +756,9 @@ export function createTokenReconfigurationApp({
         setStatus(nodeData.highlighted
             ? `Vertex ${nodeId} highlighted.`
             : `Highlight removed from vertex ${nodeId}.`);
+        // The marks are what a goal is made of, so a mark added or taken off moves
+        // the target — never the arrangements themselves.
+        notifyBoardChanged("goals-changed");
     }
 
     function renderNeighborhoodCountLabels(): void {
@@ -1056,7 +1086,7 @@ export function createTokenReconfigurationApp({
         positionGraphElements();
     }
 
-    function refreshGraphAfterMutation(message?: string): void {
+    function refreshGraphAfterMutation(message?: string, boardChangeReason: BoardChangeReason = "graph-changed"): void {
         syncSimulation();
         renderGraph();
         renderNodeHighlights();
@@ -1070,6 +1100,13 @@ export function createTokenReconfigurationApp({
         if (message) {
             setStatus(message);
         }
+
+        // The chokepoint every graph edit comes through — a vertex or edge added
+        // or removed, a paste, an import, a delete, an undo. A caller that used
+        // this only to redraw after a different kind of change says so here,
+        // rather than announcing a graph change and then trying to take it back
+        // with a second notification.
+        notifyBoardChanged(boardChangeReason);
     }
 
     function applyParameterValue(nextParameter: number): void {
@@ -1092,6 +1129,7 @@ export function createTokenReconfigurationApp({
         updateNodeClasses();
         updateTokenClasses();
         setStatus(`${currentProblem.parameterLabel} updated to ${parameter}.`);
+        notifyBoardChanged("rules-changed");
     }
 
     // Changing the problem is a change to the session, so it travels with the
@@ -1131,6 +1169,11 @@ export function createTokenReconfigurationApp({
         if (changed) {
             onProblemChange?.(nextProblem);
         }
+
+        // Announced whether or not the problem itself changed: a problem carries
+        // its parameter, so an undo that puts the same problem back with a
+        // different number has still changed which arrangements are legal.
+        notifyBoardChanged("rules-changed");
     }
 
     function setProblem(nextProblem: ProblemDefinition, nextParameter = nextProblem.defaultParameter): void {
@@ -1214,6 +1257,91 @@ export function createTokenReconfigurationApp({
         selectedTokenId = null;
         refreshGraphAfterMutation(`Imported ${imported.nodeIds.size} vertices.`);
         return imported.problem ?? null;
+    }
+
+    // Read as a copy, field by field, for the same reason the undo snapshot is:
+    // whoever receives this holds it while the canvas carries on changing under
+    // them, and a live reference would let those changes reach into a picture
+    // that is half-drawn.
+    function readBoard(): BoardReading {
+        return {
+            problem: currentProblem,
+            parameter,
+            nodeIds: graph.nodes.map(node => node.id),
+            links: graph.links.map(link => ({
+                source: graph.getLinkEndpoint(link.source),
+                target: graph.getLinkEndpoint(link.target),
+            })),
+            // Only which vertex each token stands on. Which token it is does not
+            // reach the outside, because no rule reads it.
+            occupancy: graph.tokens.map(token => token.nodeId),
+            goalNodeIds: graph.nodes.filter(node => node.highlighted).map(node => node.id),
+        };
+    }
+
+    function occupancyHolds(occupancy: Occupancy, nodeId: NodeId): boolean {
+        return occupancy.some(occupiedNodeId => graph.compareNodeIds(occupiedNodeId, nodeId) === 0);
+    }
+
+    function applyOccupancy(occupancy: Occupancy): boolean {
+        // A jump is only meaningful onto an arrangement this board could hold at
+        // all: one token per vertex here, one vertex there. A picture drawn from a
+        // board that has since changed arrives here, and moving tokens to make its
+        // count match would be inventing or destroying tokens.
+        if (occupancy.length !== graph.tokens.length) {
+            setStatus(`That arrangement holds ${occupancy.length} tokens and this board holds ${graph.tokens.length}, so it is not one this board can take. The arrangement picture was drawn from an earlier board — switch it off and on again to draw it from this one.`);
+
+            return false;
+        }
+
+        const missingNodeId = occupancy.find(nodeId => !graph.nodeById.has(nodeId));
+
+        if (missingNodeId !== undefined) {
+            setStatus(`That arrangement stands on vertex ${missingNodeId}, which is no longer on the board. Redraw the arrangement picture to drop the stale ones.`);
+
+            return false;
+        }
+
+        const freeNodeIds = occupancy.filter(nodeId => !graph.tokens.some(token => graph.compareNodeIds(token.nodeId, nodeId) === 0));
+        const proposedTokens = graph.tokens.map(token => ({ ...token }));
+        const movingTokens = proposedTokens.filter(token => !occupancyHolds(occupancy, token.nodeId));
+
+        // Tokens already standing on a wanted vertex stay where they are and only
+        // the rest are reassigned, so jumping to a neighbouring arrangement moves
+        // the fewest tokens it can rather than redecorating the whole board.
+        movingTokens.forEach((token, index) => {
+            token.nodeId = freeNodeIds[index];
+        });
+
+        // Checked before anything is touched. Every arrangement the panel offers
+        // came out of the rules and so passes, which is exactly why the few that
+        // do not — a vertex deleted since, a parameter changed since — should be
+        // refused quietly instead of drawn illegally.
+        if (!graph.isConfigurationValid(proposedTokens, parameter)) {
+            setStatus("That arrangement is no longer legal under the rule in force, so it was refused.");
+
+            return false;
+        }
+
+        recordUndoState();
+
+        // Written back onto the tokens rather than replacing the array: d3 holds
+        // these very objects as its bound data, and swapping them out would leave
+        // the drawn tokens trailing a click behind the board.
+        graph.tokens.forEach((token, index) => {
+            token.nodeId = proposedTokens[index].nodeId;
+        });
+
+        clearTokenMoveSelection();
+        // The vertices and edges did not change. Tell watchers that directly, so
+        // clicking an arrangement moves the marker instead of restarting the
+        // search that produced the arrangement being clicked.
+        refreshGraphAfterMutation(
+            `Board moved to the arrangement ${occupancy.map(nodeId => String(nodeId)).join(", ")}.`,
+            "token-moved",
+        );
+
+        return true;
     }
 
     function deleteSelection(): boolean {
@@ -1359,16 +1487,21 @@ export function createTokenReconfigurationApp({
                 // this is what brings it into view at all.
                 setCanvasView(fitGraphToCanvas(graphNodes, width, height));
             } else if (sizeChanged) {
-                // Half the change on each axis holds the middle of the drawing
-                // in the middle of the window, where that framing put it, and
-                // leaves whatever pan and zoom the user added on top of it
-                // exactly as they left it. Divided by the scale because a
-                // transform's offset is in screen units while its translate is
-                // counted in graph units.
-                setCanvasView(currentTransform.translate(
-                    (width - previousWidth) / 2 / currentTransform.k,
-                    (height - previousHeight) / 2 / currentTransform.k,
-                ));
+                // Recentering alone is not enough when a side-by-side panel takes
+                // half the width: the middle stays put, but the ends of a drawn
+                // path are clipped. Fit the SAME coordinates at both sizes, then
+                // carry the user's pan/zoom relative to the old fit over to the
+                // new one. A visitor who has not touched the view gets a complete
+                // drawing again; one who has keeps their own offset and zoom.
+                const previousFit = fitGraphToCanvas(graphNodes, previousWidth, previousHeight);
+                const nextFit = fitGraphToCanvas(graphNodes, width, height);
+                const fitRatio = nextFit.k / previousFit.k;
+                const [minScale, maxScale] = ZOOM_SCALE_RANGE;
+                const scale = Math.max(minScale, Math.min(maxScale, currentTransform.k * fitRatio));
+                const x = nextFit.x + (currentTransform.x - previousFit.x) * fitRatio;
+                const y = nextFit.y + (currentTransform.y - previousFit.y) * fitRatio;
+
+                setCanvasView(d3.zoomIdentity.translate(x, y).scale(scale));
             }
             return;
         }
@@ -1463,8 +1596,22 @@ export function createTokenReconfigurationApp({
         saveSelection,
         deleteSelection,
         importSelection,
+        readBoard,
+        applyOccupancy,
+        onBoardChange(listener: (reason: BoardChangeReason) => void): () => void {
+            boardChangeListeners.add(listener);
+
+            return () => {
+                boardChangeListeners.delete(listener);
+            };
+        },
         destroy() {
             simulation.stop();
+            // A listener left behind would hear nothing — this app is gone — but
+            // it would also keep whatever it closes over alive, which in a shell
+            // that rebuilds the app on every scenario is how a panel from three
+            // scenarios ago could still answer to the board.
+            boardChangeListeners.clear();
             if (canvasResizeObserver) {
                 canvasResizeObserver.disconnect();
             }

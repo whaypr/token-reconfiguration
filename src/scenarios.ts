@@ -1,4 +1,5 @@
 import d3is_reconfigure from "./scenarios/d3is_reconfigure.json";
+import small_component from "./scenarios/small_component.json";
 import _2lp_reconfigure from "./scenarios/2lp_reconfigure.json";
 import _2lp_blockAccess from "./scenarios/2lp_blockAccess.json";
 import type { Scenario } from "./types";
@@ -29,6 +30,12 @@ const drawnScenarios: Scenario[] = [
         id: "2lp_blockAccess",
         name: "2-Limited Packing | Block access",
         description: "Goal: Prevent the yellow tokens from reaching the vertices marked with a blue square. You are not allowed to delete anything in the given graph.",
+    },
+    {
+        ...small_component,
+        id: "small_component",
+        name: "Small example | Six arrangements",
+        description: "Goal: Move the two yellow tokens onto the blue squares. The Arrangement graph shows every legal arrangement of this small board.",
     },
 ];
 

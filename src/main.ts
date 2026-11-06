@@ -1,4 +1,5 @@
 import { createTokenReconfigurationApp } from "./core";
+import { createReconfigurationPanel } from "./reconfiguration-panel";
 import { LAYOUT_OPTIONS } from "./layouts";
 import { problems } from "./problems";
 import { scenarios } from "./scenarios";
@@ -28,8 +29,10 @@ function bootstrap(): void {
     const clearSelectionButton = document.getElementById("clearSelectionButton") as HTMLButtonElement;
     const deleteSelectionButton = document.getElementById("deleteSelectionButton") as HTMLButtonElement;
     const selectionImportInput = document.getElementById("selectionImportInput") as HTMLInputElement;
+    const spaceGraphToggle = document.getElementById("spaceGraphToggle") as HTMLInputElement;
+    const spaceFrame = document.getElementById("spaceFrame") as HTMLDivElement;
 
-    if (!scenarioSelect || !problemSelect || !parameterLabel || !parameterDescription || !layoutPicker || !layoutPickerBackdrop || !layoutOptions || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !colorMovableToggle || !colorFrozenToggle || !colorPlaceableToggle || !modeTokensButton || !modeGraphButton || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || scenarios.length === 0 || problems.length === 0) {
+    if (!scenarioSelect || !problemSelect || !parameterLabel || !parameterDescription || !layoutPicker || !layoutPickerBackdrop || !layoutOptions || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !colorMovableToggle || !colorFrozenToggle || !colorPlaceableToggle || !modeTokensButton || !modeGraphButton || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || !spaceGraphToggle || !spaceFrame || scenarios.length === 0 || problems.length === 0) {
         window.setTimeout(bootstrap, 0);
         return;
     }
@@ -37,6 +40,21 @@ function bootstrap(): void {
     let currentApp: TokenReconfigurationApp | null = null;
     let currentProblem = problems[0];
     let interactionMode: InteractionMode = "tokens";
+
+    // Built once, before there is a board for it to read. Choosing a scenario
+    // destroys the app and builds a new one, so the panel is handed a way to ask
+    // for whichever app is current rather than the app itself — the alternative
+    // is rebuilding the panel, and losing a picture that took seconds to search,
+    // every time the problem dropdown is touched.
+    const arrangementPanel = createReconfigurationPanel({
+        svgSelector: "#spaceSvg",
+        readoutSelector: "#spaceReadout",
+        getBoard: () => currentApp?.readBoard() ?? null,
+        applyOccupancy: occupancy => currentApp?.applyOccupancy(occupancy) ?? false,
+        setStatus: message => {
+            currentApp?.setStatus(message);
+        },
+    });
 
     // Only the words here. The number box — its bounds, step and value — is the
     // app's to keep in step with the rules it is enforcing, because undo can
@@ -156,6 +174,25 @@ function bootstrap(): void {
         applyControlsToApp();
         renderProblem(scenarioProblem);
         currentApp.setStatus(scenario.description);
+
+        // A token that slides, or a square marked, cannot change which
+        // arrangements are reachable — only where the board is within them, or
+        // what counts as having arrived. Everything else can, and is worth
+        // searching again for. The panel was built once, so this listener is
+        // attached to an app that did not exist a moment ago and dies with it.
+        currentApp.onBoardChange(reason => {
+            if (reason === "token-moved" || reason === "goals-changed") {
+                arrangementPanel.relocate();
+            } else {
+                arrangementPanel.invalidate();
+            }
+        });
+
+        // Said out loud rather than waited for: the new app announces itself once
+        // while it is still being built, which is before there is a listener to
+        // hear it. Without this the panel would keep drawing the previous
+        // scenario's arrangements until the board was touched.
+        arrangementPanel.invalidate();
     }
 
     // Saved files name a problem by id rather than by position, so a reordered
@@ -222,6 +259,14 @@ function bootstrap(): void {
             currentApp?.setColorHints(readColorHints());
         });
     }
+
+    // Opened before the panel is told to start, so the first size it measures is
+    // a box that already has one: a search started in a hidden frame would lay its
+    // rings out around a canvas of nothing.
+    spaceGraphToggle.addEventListener("change", () => {
+        spaceFrame.classList.toggle("is-open", spaceGraphToggle.checked);
+        arrangementPanel.setOpen(spaceGraphToggle.checked);
+    });
 
     modeTokensButton.addEventListener("click", () => {
         applyInteractionMode("tokens");
@@ -331,6 +376,10 @@ function bootstrap(): void {
     colorMovableToggle.checked = DEFAULT_COLOR_HINTS.movable;
     colorFrozenToggle.checked = DEFAULT_COLOR_HINTS.frozen;
     colorPlaceableToggle.checked = DEFAULT_COLOR_HINTS.placeable;
+    // Same reason as the three above, with one more: the frame's visibility is a
+    // class rather than a form state, so a restored tick would otherwise open no
+    // frame at all.
+    spaceGraphToggle.checked = false;
     loadScenario(0);
 }
 
