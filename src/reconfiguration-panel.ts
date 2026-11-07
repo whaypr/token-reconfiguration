@@ -2,11 +2,12 @@ import * as d3 from "d3";
 import type { D3ZoomEvent, Selection, ZoomTransform } from "d3";
 import { ConfigurationExplorer } from "./configuration-space";
 import type { ConfigurationRecord, Occupancy } from "./configuration-space";
-import { createConfigurationProbe, makeOccupancyKey, occupanciesCover } from "./configuration-board";
-import type { BoardReading } from "./configuration-board";
+import { createConfigurationProbe, makeOccupancyKey, moveBetweenOccupancies, occupanciesCover } from "./configuration-board";
+import type { BoardReading, TokenMove } from "./configuration-board";
 import type { NodeId } from "./types";
 
 type SvgSelection = Selection<SVGSVGElement, unknown, null, undefined>;
+type SpaceView = "rings" | "tree";
 
 // Milliseconds of searching per animation frame. Small enough that the canvas
 // next door keeps panning smoothly while a component grows; the whole search is
@@ -20,6 +21,9 @@ const INNER_RING_FRACTION = 0.26;
 const OUTER_PADDING_PX = 26;
 
 const DOT_RADIUS_PX = 5;
+// A label per branch is legible on small demonstration trees. Dense trees keep
+// their clean geometry, with the same move supplied by the hover/focus readout.
+const MAX_LABELED_BRANCHES = 60;
 
 interface LayoutPoint {
     key: string;
@@ -36,16 +40,20 @@ interface PanelElements {
     edgeLayer: Selection<SVGGElement, unknown, null, undefined>;
     pathLayer: Selection<SVGGElement, unknown, null, undefined>;
     nodeLayer: Selection<SVGGElement, unknown, null, undefined>;
+    labelLayer: Selection<SVGGElement, unknown, null, undefined>;
 }
 
 export interface ReconfigurationPanelOptions {
     svgSelector: string;
     readoutSelector: string;
+    descriptionSelector: string;
+    tabsSelector: string;
     // Read fresh every time, because the scenario changes underneath the panel:
     // picking a scenario tears the app down and builds a new one.
     getBoard(): BoardReading | null;
     // Puts the board into the given arrangement. Returns false when it could not.
     applyOccupancy(occupancy: Occupancy): boolean;
+    setMovePreview(move: TokenMove | null): void;
     setStatus(message: string): void;
 }
 
@@ -112,15 +120,84 @@ function layoutRings(records: ConfigurationRecord[], width: number, height: numb
     return points;
 }
 
+/**
+ * The BFS discovery tree, with the start at the left and each successive move
+ * count one column to the right. Leaves take consecutive rows; a parent sits in
+ * the middle of its children's span. This keeps whole branches together instead
+ * of weaving the cross-links that make a larger move graph difficult to follow.
+ */
+function layoutTree(records: ConfigurationRecord[], width: number, height: number): Map<string, LayoutPoint> {
+    const points = new Map<string, LayoutPoint>();
+    const children = new Map<string, ConfigurationRecord[]>();
+    const yPositions = new Map<string, number>();
+    const root = records.find(record => record.parentKey === null);
+
+    if (!root) {
+        return points;
+    }
+
+    for (const record of records) {
+        children.set(record.key, []);
+    }
+
+    for (const record of records) {
+        if (record.parentKey !== null) {
+            // BFS records a parent before its children, so it is already here.
+            children.get(record.parentKey)!.push(record);
+        }
+    }
+
+    const leafCount = records.reduce((count, record) => count + (children.get(record.key)!.length === 0 ? 1 : 0), 0);
+    const usableHeight = Math.max(40, height - OUTER_PADDING_PX * 2);
+    const usableWidth = Math.max(40, width - OUTER_PADDING_PX * 2);
+    const deepest = records.reduce((depth, record) => Math.max(depth, record.depth), 0);
+    let nextLeaf = 0;
+
+    function place(record: ConfigurationRecord): void {
+        const descendants = children.get(record.key)!;
+
+        if (descendants.length === 0) {
+            yPositions.set(record.key, leafCount === 1 ? 0 : (nextLeaf / (leafCount - 1) - 0.5) * usableHeight);
+            nextLeaf += 1;
+        } else {
+            for (const child of descendants) {
+                place(child);
+            }
+
+            const first = yPositions.get(descendants[0].key)!;
+            const last = yPositions.get(descendants[descendants.length - 1].key)!;
+            yPositions.set(record.key, (first + last) / 2);
+        }
+
+        points.set(record.key, {
+            key: record.key,
+            x: deepest === 0 ? 0 : (record.depth / deepest - 0.5) * usableWidth,
+            y: yPositions.get(record.key)!,
+            depth: record.depth,
+            occupancy: record.occupancy,
+        });
+    }
+
+    place(root);
+    return points;
+}
+
 export function createReconfigurationPanel({
     svgSelector,
     readoutSelector,
+    descriptionSelector,
+    tabsSelector,
     getBoard,
     applyOccupancy,
+    setMovePreview,
     setStatus,
 }: ReconfigurationPanelOptions): ReconfigurationPanel {
     const svg = d3.select(svgSelector) as unknown as SvgSelection;
     const readout = document.querySelector(readoutSelector) as HTMLElement | null;
+    const description = document.querySelector(descriptionSelector);
+    const tabs = [...document.querySelectorAll<HTMLButtonElement>(`${tabsSelector} [data-view]`)];
+    let view: SpaceView = "rings";
+
 
     svg.style("touch-action", "none");
 
@@ -132,6 +209,7 @@ export function createReconfigurationPanel({
         edgeLayer: viewport.append("g").attr("class", "space-edge-layer"),
         pathLayer: viewport.append("g").attr("class", "space-path-layer"),
         nodeLayer: viewport.append("g").attr("class", "space-node-layer"),
+        labelLayer: viewport.append("g").attr("class", "space-label-layer"),
     };
 
     let width = 0;
@@ -214,6 +292,7 @@ export function createReconfigurationPanel({
         }
 
         stopSearch();
+        highlightPoint(null);
         syncCanvasSize();
 
         const board = getBoard();
@@ -321,6 +400,29 @@ export function createReconfigurationPanel({
         distancesToGoal = explorer.distancesFrom(goalKeys);
     }
 
+    function moveInto(key: string | null): TokenMove | null {
+        if (!explorer || !probe || key === null) {
+            return null;
+        }
+
+        const record = explorer.recordAt(key);
+        const parent = record?.parentKey ? explorer.recordAt(record.parentKey) : null;
+
+        return record && parent
+            ? moveBetweenOccupancies(parent.occupancy, record.occupancy, probe.compareIds)
+            : null;
+    }
+
+    function highlightPoint(key: string | null): void {
+        hoveredKey = key;
+        setMovePreview(moveInto(key));
+        // Recolour just the existing edge selection, not the whole join. A graph
+        // with thousands of arrangements must not be rebuilt for every hover.
+        elements.edgeLayer.selectAll<SVGLineElement, { from: LayoutPoint; to: LayoutPoint }>(".space-edge")
+            .classed("is-preview", edge => key !== null && (edge.from.depth > edge.to.depth ? edge.from.key : edge.to.key) === key);
+        renderReadout();
+    }
+
     function describeVerdict(): string {
         if (!explorer || !probe) {
             return "Open a graph to see its arrangements.";
@@ -402,9 +504,15 @@ export function createReconfigurationPanel({
 
         lines.push(describeVerdict());
 
-        lines.push(hovered
-            ? `that arrangement: ${hovered.occupancy.map(id => String(id)).join(" · ")} — ${hovered.depth} move${hovered.depth === 1 ? "" : "s"} from the start`
-            : describeOccupancy(explorer?.recordAt(currentKey ?? "")?.occupancy ?? null));
+        if (hovered) {
+            const move = moveInto(hovered.key);
+            lines.push(move
+                ? `Move into this branch: token ${String(move.from)} → ${String(move.to)} (from the preceding arrangement).`
+                : "Starting arrangement: no incoming move.");
+            lines.push(`that arrangement: ${hovered.occupancy.map(id => String(id)).join(" · ")} — ${hovered.depth} move${hovered.depth === 1 ? "" : "s"} from the start`);
+        } else {
+            lines.push(describeOccupancy(explorer?.recordAt(currentKey ?? "")?.occupancy ?? null));
+        }
 
         readout.textContent = "";
 
@@ -419,7 +527,9 @@ export function createReconfigurationPanel({
         measureAgainstGoal();
 
         const records = explorer?.configurations() ?? [];
-        const points = layoutRings(records, width || 800, height || 500);
+        const points = view === "tree"
+            ? layoutTree(records, width || 800, height || 500)
+            : layoutRings(records, width || 800, height || 500);
 
         // Rings, so a visitor can read a move count off the picture rather than
         // counting lines.
@@ -428,7 +538,7 @@ export function createReconfigurationPanel({
         const deepest = depths[depths.length - 1] ?? 0;
 
         elements.ringLayer.selectAll<SVGCircleElement, number>(".space-ring")
-            .data(depths.filter(depth => depth > 0), depth => String(depth))
+            .data(view === "rings" ? depths.filter(depth => depth > 0) : [], depth => String(depth))
             .join(
                 enter => enter.append("circle").attr("class", "space-ring"),
                 update => update,
@@ -438,6 +548,12 @@ export function createReconfigurationPanel({
             .attr("fill", "none");
 
         const edges = (explorer?.edges ?? [])
+            // Rings show every legal move. The tree keeps only the parent edge
+            // that first discovered each arrangement; all shortest routes still
+            // come from the complete graph below.
+            .filter(edge => view === "rings"
+                || explorer?.recordAt(edge.from)?.parentKey === edge.to
+                || explorer?.recordAt(edge.to)?.parentKey === edge.from)
             .map(edge => ({ from: points.get(edge.from), to: points.get(edge.to) }))
             .filter((edge): edge is { from: LayoutPoint; to: LayoutPoint } => Boolean(edge.from && edge.to));
 
@@ -451,7 +567,39 @@ export function createReconfigurationPanel({
             .attr("x1", edge => edge.from.x)
             .attr("y1", edge => edge.from.y)
             .attr("x2", edge => edge.to.x)
-            .attr("y2", edge => edge.to.y);
+            .attr("y2", edge => edge.to.y)
+            .classed("is-preview", edge => (edge.from.depth > edge.to.depth ? edge.from.key : edge.to.key) === hoveredKey);
+
+        const moveLabels: Array<{ key: string; x: number; y: number; move: TokenMove }> = [];
+
+        if (view === "tree" && records.length <= MAX_LABELED_BRANCHES) {
+            for (const edge of edges) {
+                const child = edge.from.depth > edge.to.depth ? edge.from : edge.to;
+                const move = moveInto(child.key);
+
+                if (move) {
+                    moveLabels.push({
+                        key: child.key,
+                        x: (edge.from.x + edge.to.x) / 2,
+                        y: (edge.from.y + edge.to.y) / 2 - 6,
+                        move,
+                    });
+                }
+            }
+        }
+
+        elements.labelLayer.selectAll<SVGTextElement, { key: string; x: number; y: number; move: TokenMove }>(".space-move-label")
+            .data(moveLabels, label => label.key)
+            .join(
+                enter => enter.append("text")
+                    .attr("class", "space-move-label")
+                    .attr("text-anchor", "middle"),
+                update => update,
+                exit => exit.remove(),
+            )
+            .attr("x", label => label.x)
+            .attr("y", label => label.y)
+            .text(label => `${String(label.move.from)} → ${String(label.move.to)}`);
 
         // The way down to the nearest marked arrangement, drawn from the dot the
         // board is actually on. Same information as "N moves left", in a form a
@@ -497,15 +645,32 @@ export function createReconfigurationPanel({
                 enter => enter.append("circle")
                     .attr("class", "space-node")
                     .attr("r", DOT_RADIUS_PX)
+                    .attr("tabindex", 0)
+                    .attr("role", "button")
                     .on("pointerenter", (event: PointerEvent, point: LayoutPoint) => {
-                        hoveredKey = point.key;
-                        renderReadout();
+                        highlightPoint(point.key);
                     })
                     .on("pointerleave", () => {
-                        hoveredKey = null;
-                        renderReadout();
+                        highlightPoint(null);
+                    })
+                    .on("focus", (event: FocusEvent, point: LayoutPoint) => {
+                        highlightPoint(point.key);
+                    })
+                    .on("blur", () => {
+                        highlightPoint(null);
+                    })
+                    .on("keydown", (event: KeyboardEvent) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            (event.currentTarget as SVGCircleElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+                        }
                     })
                     .on("click", (event: MouseEvent, point: LayoutPoint) => {
+                        // Re-assert the preview here: a touch has no persistent
+                        // hover, and it may receive pointerleave before click.
+                        // Keeping it after the jump makes the explanation usable
+                        // on a kiosk as well as with a mouse or keyboard.
+                        highlightPoint(point.key);
                         if (point.key === currentKey) {
                             return;
                         }
@@ -519,12 +684,70 @@ export function createReconfigurationPanel({
             )
             .attr("cx", point => point.x)
             .attr("cy", point => point.y)
+            .attr("aria-label", point => `${goalKeys.includes(point.key) ? "Goal arrangement" : "Arrangement"}: ${point.occupancy.map(id => String(id)).join(", ")}. ${point.depth} move${point.depth === 1 ? "" : "s"} from the start. Enter to go here.`)
             .classed("is-goal", point => goalKeys.includes(point.key))
             .classed("is-on-path", point => descent.some(node => node.key === point.key))
             .classed("is-current", point => point.key === currentKey);
 
         renderReadout();
     }
+
+    function setView(nextView: SpaceView): void {
+        if (destroyed || nextView === view) {
+            return;
+        }
+
+        view = nextView;
+        updateViewControls();
+        render();
+    }
+
+    function updateViewControls(): void {
+        const activeTab = tabs.find(tab => tab.dataset.view === view);
+
+        for (const tab of tabs) {
+            const active = tab === activeTab;
+            tab.classList.toggle("active", active);
+            tab.setAttribute("aria-selected", String(active));
+            tab.tabIndex = active ? 0 : -1;
+        }
+
+        if (description) {
+            description.textContent = view === "tree"
+                ? "Shortest-route branches from the starting arrangement on the left. Each column is one move further out; cross-links are omitted."
+                : "One dot for every arrangement the rules allow, one line for every single move between them. The middle dot is where the board started; a ring is one move further out.";
+        }
+
+        readout?.parentElement?.setAttribute("aria-label", `${activeTab?.textContent ?? "Arrangement"} view`);
+    }
+
+    for (const [index, tab] of tabs.entries()) {
+        const tabView: SpaceView = tab.dataset.view === "tree" ? "tree" : "rings";
+        tab.addEventListener("click", () => setView(tabView));
+
+        tab.addEventListener("keydown", (event: KeyboardEvent) => {
+            let nextIndex: number | null = null;
+
+            if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                nextIndex = (index - 1 + tabs.length) % tabs.length;
+            } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                nextIndex = (index + 1) % tabs.length;
+            } else if (event.key === "Home") {
+                nextIndex = 0;
+            } else if (event.key === "End") {
+                nextIndex = tabs.length - 1;
+            }
+
+            if (nextIndex !== null) {
+                event.preventDefault();
+                const nextTab = tabs[nextIndex];
+                setView(nextTab.dataset.view === "tree" ? "tree" : "rings");
+                nextTab.focus();
+            }
+        });
+    }
+
+    updateViewControls();
 
     return {
         setOpen(nextOpen: boolean) {
@@ -538,6 +761,7 @@ export function createReconfigurationPanel({
                 startSearch();
             } else {
                 stopSearch();
+                highlightPoint(null);
             }
         },
         // Coalesced into one restart per frame. An undo of a problem switch
@@ -569,9 +793,9 @@ export function createReconfigurationPanel({
                 return;
             }
 
-            // A move lands inside the component that was already searched, so
-            // only the marker and the verdict change. Re-searching here would
-            // throw away a picture that took seconds to build, on every move.
+            // Keep a clicked branch's preview: its parent/child move is still
+            // true after relocating the marker. The readout explicitly says this
+            // is the move into the branch, not a claim about the jump to it.
             currentKey = makeOccupancyKey([...board.occupancy].sort(probe.compareIds), probe.compareIds);
             currentGoalNodeIds = board.goalNodeIds;
             render();
@@ -579,6 +803,7 @@ export function createReconfigurationPanel({
         destroy() {
             destroyed = true;
             stopSearch();
+            highlightPoint(null);
             resizeObserver?.disconnect();
             svg.on(".zoom", null);
             svg.on("contextmenu", null);

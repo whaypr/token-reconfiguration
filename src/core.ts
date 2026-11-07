@@ -22,7 +22,7 @@ import type {
     TokenReconfigurationAppConfig,
     SerializedProblemContext,
 } from "./types";
-import type { BoardReading } from "./configuration-board";
+import type { BoardReading, TokenMove } from "./configuration-board";
 import type { Occupancy } from "./configuration-space";
 import { createTouchGestures, TOUCH_HIT_RADIUS_PX } from "./touch-gestures";
 import { applyGraphLayout } from "./layouts";
@@ -181,6 +181,44 @@ export function createTokenReconfigurationApp({
         .attr("class", "pending-edge-source")
         .attr("r", 26)
         .style("display", "none");
+
+    // A hypothetical move from the arrangement panel. This is deliberately not
+    // another node class: it is a transient explanation, not a claimed legal
+    // target or a change to the board's state, and neither undo nor saving sees it.
+    const movePreviewLayer = graphViewport.append("g")
+        .attr("class", "move-preview-layer")
+        .attr("aria-hidden", "true")
+        .style("display", "none")
+        .style("pointer-events", "none");
+    movePreviewLayer.append("defs").append("marker")
+        .attr("id", "move-preview-arrow")
+        .attr("viewBox", "0 0 10 10")
+        .attr("refX", 9)
+        .attr("refY", 5)
+        .attr("markerWidth", 10)
+        .attr("markerHeight", 10)
+        .attr("markerUnits", "userSpaceOnUse")
+        .attr("orient", "auto")
+        .append("path")
+        .attr("class", "move-preview-arrowhead")
+        .attr("d", "M 0 0 L 10 5 L 0 10 z");
+    const movePreviewArrow = movePreviewLayer.append("line")
+        .attr("class", "move-preview-arrow")
+        .attr("marker-end", "url(#move-preview-arrow)");
+    const movePreviewSource = movePreviewLayer.append("circle")
+        .attr("class", "move-preview-source")
+        .attr("r", 27);
+    const movePreviewTarget = movePreviewLayer.append("rect")
+        .attr("class", "move-preview-target")
+        .attr("width", 54)
+        .attr("height", 54)
+        .attr("rx", 6);
+    const movePreviewSourceLabel = movePreviewLayer.append("text")
+        .attr("class", "move-preview-label");
+    const movePreviewTargetLabel = movePreviewLayer.append("text")
+        .attr("class", "move-preview-label is-target")
+        .attr("text-anchor", "end");
+    let currentMovePreview: { source: GraphNode; target: GraphNode } | null = null;
 
     function setStatus(message: string): void {
         statusElement.textContent = message;
@@ -840,11 +878,52 @@ export function createTokenReconfigurationApp({
         if (overlayRefreshPaused) {
             neighborhoodCountLayer.selectAll<SVGTextElement, GraphNode>(".neighborhood-count").remove();
             moveDirectionLayer.selectAll<SVGLineElement, { key: string; x1: number; y1: number; x2: number; y2: number }>(".move-direction-hint").remove();
+            positionMovePreview();
             return;
         }
 
         renderNeighborhoodCountLabels();
         renderMoveDirectionHints();
+    }
+
+    function setMovePreview(move: TokenMove | null): void {
+        const source = move === null ? undefined : graph.nodeById.get(move.from);
+        const target = move === null ? undefined : graph.nodeById.get(move.to);
+        currentMovePreview = source && target && source.id !== target.id
+            ? { source, target }
+            : null;
+        positionMovePreview();
+    }
+
+    function positionMovePreview(): void {
+        if (!currentMovePreview || overlayRefreshPaused) {
+            movePreviewLayer.style("display", "none");
+            return;
+        }
+
+        const { source, target } = currentMovePreview;
+        const dx = target.x - source.x;
+        const dy = target.y - source.y;
+        const distance = Math.hypot(dx, dy);
+        const unitX = distance > 0 ? dx / distance : 1;
+        const unitY = distance > 0 ? dy / distance : 0;
+        const shortening = Math.min(31, distance * 0.4);
+        movePreviewLayer.style("display", null);
+        movePreviewSource.attr("cx", source.x).attr("cy", source.y);
+        movePreviewTarget.attr("x", target.x - 27).attr("y", target.y - 27);
+        movePreviewArrow
+            .attr("x1", source.x + unitX * shortening)
+            .attr("y1", source.y + unitY * shortening)
+            .attr("x2", target.x - unitX * shortening)
+            .attr("y2", target.y - unitY * shortening);
+        movePreviewSourceLabel
+            .attr("x", source.x - 28)
+            .attr("y", source.y - 34)
+            .text(`from ${String(source.id)}`);
+        movePreviewTargetLabel
+            .attr("x", target.x + 28)
+            .attr("y", target.y - 34)
+            .text(`to ${String(target.id)}`);
     }
 
     function positionGraphElements(): void {
@@ -870,6 +949,7 @@ export function createTokenReconfigurationApp({
             }
         }
 
+        positionMovePreview();
         positionTokens();
         refreshOverlayState();
     }
@@ -1598,6 +1678,7 @@ export function createTokenReconfigurationApp({
         importSelection,
         readBoard,
         applyOccupancy,
+        setMovePreview,
         onBoardChange(listener: (reason: BoardChangeReason) => void): () => void {
             boardChangeListeners.add(listener);
 

@@ -22,6 +22,11 @@ export interface BoardReading {
     goalNodeIds: NodeId[];
 }
 
+export interface TokenMove {
+    from: NodeId;
+    to: NodeId;
+}
+
 export interface ConfigurationProbe {
     compareIds(left: NodeId, right: NodeId): number;
     /** Every arrangement one legal token slide away, as occupancies. */
@@ -127,4 +132,32 @@ export function makeOccupancyKey(occupancy: Occupancy, compareIds: (left: NodeId
 
 export function occupanciesCover(goals: NodeId[], occupancy: Occupancy, compareIds: (left: NodeId, right: NodeId) => number): boolean {
     return goals.every(goalNodeId => occupancy.some(nodeId => compareIds(nodeId, goalNodeId) === 0));
+}
+
+/** The one slide between two arrangements, or null when they differ in any other way. */
+export function moveBetweenOccupancies(before: Occupancy, after: Occupancy, compareIds: (left: NodeId, right: NodeId) => number): TokenMove | null {
+    const left = [...before].sort(compareIds);
+    const right = [...after].sort(compareIds);
+    let from: NodeId | undefined;
+    let to: NodeId | undefined;
+    let leftIndex = 0;
+    let rightIndex = 0;
+
+    while (leftIndex < left.length || rightIndex < right.length) {
+        if (leftIndex < left.length && rightIndex < right.length && compareIds(left[leftIndex], right[rightIndex]) === 0) {
+            leftIndex += 1;
+            rightIndex += 1;
+            continue;
+        }
+
+        if (rightIndex >= right.length || (leftIndex < left.length && compareIds(left[leftIndex], right[rightIndex]) < 0)) {
+            if (from !== undefined) return null;
+            from = left[leftIndex++];
+        } else {
+            if (to !== undefined) return null;
+            to = right[rightIndex++];
+        }
+    }
+
+    return from !== undefined && to !== undefined ? { from, to } : null;
 }

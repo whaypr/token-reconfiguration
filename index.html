@@ -188,12 +188,21 @@
             <div class="canvas-caption">
                 <div class="canvas-caption-text">
                     <span>Arrangement graph</span>
-                    <span>One dot for every arrangement the rules allow, one line for every single move between
-                        them. The middle dot is where the board started; a ring is one move further out.</span>
+                    <span id="spaceDescription">One dot for every arrangement the rules allow, one line for every
+                        single move between them. The middle dot is where the board started; a ring is one move
+                        further out.</span>
                 </div>
             </div>
-            <div class="space-body">
-                <svg id="spaceSvg"></svg>
+            <div class="space-toolbar">
+                <div class="mode-toggle" id="spaceDiagramTabs" role="tablist" aria-label="Arrangement representation">
+                    <button type="button" class="mode-button active" data-view="rings" role="tab" id="spaceRingsTab"
+                        aria-selected="true" aria-controls="spaceBody">Rings</button>
+                    <button type="button" class="mode-button" data-view="tree" role="tab" id="spaceTreeTab"
+                        aria-selected="false" aria-controls="spaceBody" tabindex="-1">Move tree</button>
+                </div>
+            </div>
+            <div class="space-body" id="spaceBody" role="tabpanel" aria-live="off">
+                <svg id="spaceSvg" aria-label="Token arrangement reconfiguration diagram"></svg>
                 <div class="space-readout" id="spaceReadout"></div>
             </div>
         </div>

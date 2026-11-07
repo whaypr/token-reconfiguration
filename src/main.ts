@@ -49,8 +49,11 @@ function bootstrap(): void {
     const arrangementPanel = createReconfigurationPanel({
         svgSelector: "#spaceSvg",
         readoutSelector: "#spaceReadout",
+        descriptionSelector: "#spaceDescription",
+        tabsSelector: "#spaceDiagramTabs",
         getBoard: () => currentApp?.readBoard() ?? null,
         applyOccupancy: occupancy => currentApp?.applyOccupancy(occupancy) ?? false,
+        setMovePreview: move => currentApp?.setMovePreview(move),
         setStatus: message => {
             currentApp?.setStatus(message);
         },

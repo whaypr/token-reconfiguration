@@ -601,6 +601,43 @@ svg:active {
     stroke-width: 3px;
 }
 
+/* A move preview is a temporary explanation, not a token selection. The dashed
+   circle and solid square are distinguishable even without the two colours. */
+.move-preview-source {
+    fill: none;
+    stroke: #64748b;
+    stroke-width: 3px;
+    stroke-dasharray: 5 4;
+}
+
+.move-preview-target {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 3px;
+}
+
+.move-preview-arrow {
+    stroke: var(--accent);
+    stroke-width: 3px;
+}
+
+.move-preview-arrowhead {
+    fill: var(--accent);
+}
+
+.move-preview-label {
+    fill: var(--muted);
+    font: 700 11px "Space Grotesk", sans-serif;
+    paint-order: stroke;
+    stroke: #ffffff;
+    stroke-width: 4px;
+    stroke-linejoin: round;
+}
+
+.move-preview-label.is-target {
+    fill: var(--accent);
+}
+
 .move-direction-hint {
     stroke: #2563eb;
     stroke-width: 4px;
@@ -665,6 +702,11 @@ svg:active {
     gap: 12px;
 }
 
+.space-toolbar {
+    display: flex;
+    padding: 2px 4px 10px;
+}
+
 .space-frame .canvas-caption-text {
     flex-direction: column;
     gap: 3px;
@@ -679,8 +721,12 @@ svg:active {
 
 .space-readout {
     display: flex;
+    flex: 0 0 136px;
     flex-direction: column;
     gap: 8px;
+    max-height: 136px;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
     font-size: 0.78rem;
     line-height: 1.4;
     color: var(--muted);
@@ -708,6 +754,22 @@ svg:active {
     stroke-width: 1px;
 }
 
+.space-edge.is-preview {
+    stroke: var(--accent);
+    stroke-width: 3px;
+    stroke-opacity: 0.9;
+}
+
+.space-move-label {
+    fill: var(--ink);
+    font: 500 10px "DM Mono", monospace;
+    paint-order: stroke;
+    stroke: #fbfcfc;
+    stroke-width: 4px;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+
 .space-node {
     fill: #9fb0bb;
     stroke: #ffffff;
@@ -732,6 +794,12 @@ svg:active {
    current one or a goal still says something. */
 .space-node:hover {
     filter: brightness(0.78);
+}
+
+.space-node:focus-visible {
+    outline: none;
+    stroke: var(--ink);
+    stroke-width: 3px;
 }
 
 .space-descent {

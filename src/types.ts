@@ -1,7 +1,7 @@
 // Both imports are types only, which is what lets a board shape live here while
 // the code that reads it lives with the search. Erased at compile time, so there
 // is no import cycle at runtime to trip over.
-import type { BoardReading } from "./configuration-board";
+import type { BoardReading, TokenMove } from "./configuration-board";
 import type { Occupancy } from "./configuration-space";
 
 export type NodeId = number | string;
@@ -192,6 +192,9 @@ export interface TokenReconfigurationApp {
     // board can hold: same number of tokens, every vertex still present. Records
     // one undo step, so a jump is always walkable back.
     applyOccupancy(occupancy: Occupancy): boolean;
+    // Decorates the board with one hypothetical slide. Null removes the preview;
+    // neither case changes a token, the rules, or the undo history.
+    setMovePreview(move: TokenMove | null): void;
     // Hears about a change the moment the board makes it. Returns the way to stop
     // hearing. The reason is a hint about how much a listener needs to redo, not
     // a guarantee: a listener that must be exact re-reads the board regardless.
