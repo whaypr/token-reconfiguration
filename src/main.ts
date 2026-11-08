@@ -46,11 +46,12 @@ function bootstrap(): void {
     // for whichever app is current rather than the app itself — the alternative
     // is rebuilding the panel, and losing a picture that took seconds to search,
     // every time the problem dropdown is touched.
-    const arrangementPanel = createReconfigurationPanel({
+    const configurationPanel = createReconfigurationPanel({
         svgSelector: "#spaceSvg",
         readoutSelector: "#spaceReadout",
         descriptionSelector: "#spaceDescription",
         tabsSelector: "#spaceDiagramTabs",
+        completeGraphSelector: "#spaceCompleteGraph",
         getBoard: () => currentApp?.readBoard() ?? null,
         applyOccupancy: occupancy => currentApp?.applyOccupancy(occupancy) ?? false,
         setMovePreview: move => currentApp?.setMovePreview(move),
@@ -179,23 +180,23 @@ function bootstrap(): void {
         currentApp.setStatus(scenario.description);
 
         // A token that slides, or a square marked, cannot change which
-        // arrangements are reachable — only where the board is within them, or
+        // configurations are reachable — only where the board is within them, or
         // what counts as having arrived. Everything else can, and is worth
         // searching again for. The panel was built once, so this listener is
         // attached to an app that did not exist a moment ago and dies with it.
         currentApp.onBoardChange(reason => {
             if (reason === "token-moved" || reason === "goals-changed") {
-                arrangementPanel.relocate();
+                configurationPanel.relocate();
             } else {
-                arrangementPanel.invalidate();
+                configurationPanel.invalidate();
             }
         });
 
         // Said out loud rather than waited for: the new app announces itself once
         // while it is still being built, which is before there is a listener to
         // hear it. Without this the panel would keep drawing the previous
-        // scenario's arrangements until the board was touched.
-        arrangementPanel.invalidate();
+        // scenario's configurations until the board was touched.
+        configurationPanel.invalidate();
     }
 
     // Saved files name a problem by id rather than by position, so a reordered
@@ -268,7 +269,7 @@ function bootstrap(): void {
     // rings out around a canvas of nothing.
     spaceGraphToggle.addEventListener("change", () => {
         spaceFrame.classList.toggle("is-open", spaceGraphToggle.checked);
-        arrangementPanel.setOpen(spaceGraphToggle.checked);
+        configurationPanel.setOpen(spaceGraphToggle.checked);
     });
 
     modeTokensButton.addEventListener("click", () => {

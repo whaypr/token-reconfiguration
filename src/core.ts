@@ -83,7 +83,7 @@ const MAX_UNDO_STEPS = 20;
 // Does this batch of vertices arrive with its own drawing? A vertex that was
 // only named (an id, or no coordinates) is placed by the factory relative to a
 // canvas it has not been given a size for yet, so a scenario has to have said
-// where EVERY vertex goes before its arrangement can be trusted. The check
+// where EVERY vertex goes before its Configuration can be trusted. The check
 // belongs here rather than on the built graph because a vertex with no
 // coordinates still ends up at finite numbers, indistinguishable from one that
 // was genuinely drawn at that spot.
@@ -146,7 +146,7 @@ export function createTokenReconfigurationApp({
     const undoStack: AppUndoSnapshot[] = [];
     let undoGroupDepth = 0;
     // Anything watching the board from outside — today, the panel that draws the
-    // graph of arrangements. A set rather than one callback so a second watcher
+    // graph of Configurations. A set rather than one callback so a second watcher
     // can be added without either one having to forward to the other.
     const boardChangeListeners = new Set<(reason: BoardChangeReason) => void>();
 
@@ -182,7 +182,7 @@ export function createTokenReconfigurationApp({
         .attr("r", 26)
         .style("display", "none");
 
-    // A hypothetical move from the arrangement panel. This is deliberately not
+    // A hypothetical move from the Configuration panel. This is deliberately not
     // another node class: it is a transient explanation, not a claimed legal
     // target or a change to the board's state, and neither undo nor saving sees it.
     const movePreviewLayer = graphViewport.append("g")
@@ -664,7 +664,7 @@ export function createTokenReconfigurationApp({
         }
 
         // Said apart from every other change on purpose: a legal slide lands on an
-        // arrangement that was already reachable, so a watcher that has the
+        // Configuration that was already reachable, so a watcher that has the
         // component drawn already needs to move a marker, not start over.
         notifyBoardChanged("token-moved");
 
@@ -685,7 +685,7 @@ export function createTokenReconfigurationApp({
         refreshOverlayState();
         updateNodeClasses();
         setStatus(`Token added at node ${nodeId}.`);
-        // A token appearing or leaving changes how many tokens every arrangement
+        // A token appearing or leaving changes how many tokens every Configuration
         // holds, which is a different board to search.
         notifyBoardChanged("token-added-or-removed");
         return true;
@@ -795,7 +795,7 @@ export function createTokenReconfigurationApp({
             ? `Vertex ${nodeId} highlighted.`
             : `Highlight removed from vertex ${nodeId}.`);
         // The marks are what a goal is made of, so a mark added or taken off moves
-        // the target — never the arrangements themselves.
+        // the target — never the Configurations themselves.
         notifyBoardChanged("goals-changed");
     }
 
@@ -1197,7 +1197,7 @@ export function createTokenReconfigurationApp({
 
         if (!graph.isConfigurationValid(graph.tokens, nextParameter)) {
             pInput.value = String(parameter);
-            setStatus(`${currentProblem.parameterLabel} = ${nextParameter} would make the current configuration invalid, so it was rejected.`);
+            setStatus(`${currentProblem.parameterLabel} = ${nextParameter} would make the current Configuration invalid, so it was rejected.`);
             return;
         }
 
@@ -1252,7 +1252,7 @@ export function createTokenReconfigurationApp({
 
         // Announced whether or not the problem itself changed: a problem carries
         // its parameter, so an undo that puts the same problem back with a
-        // different number has still changed which arrangements are legal.
+        // different number has still changed which Configurations are legal.
         notifyBoardChanged("rules-changed");
     }
 
@@ -1263,7 +1263,7 @@ export function createTokenReconfigurationApp({
 
         const switchedProblem = nextProblem.id !== currentProblem.id;
         recordUndoState();
-        // A configuration can be legal under one problem and not under another,
+        // A Configuration can be legal under one problem and not under another,
         // and dropping a token the user placed would be worse than admitting the
         // pair does not fit: the tokens stay, and the status line says so.
         const violated = !graph.isConfigurationValid(graph.tokens, nextParameter);
@@ -1364,12 +1364,12 @@ export function createTokenReconfigurationApp({
     }
 
     function applyOccupancy(occupancy: Occupancy): boolean {
-        // A jump is only meaningful onto an arrangement this board could hold at
+        // A jump is only meaningful onto an Configuration this board could hold at
         // all: one token per vertex here, one vertex there. A picture drawn from a
         // board that has since changed arrives here, and moving tokens to make its
         // count match would be inventing or destroying tokens.
         if (occupancy.length !== graph.tokens.length) {
-            setStatus(`That arrangement holds ${occupancy.length} tokens and this board holds ${graph.tokens.length}, so it is not one this board can take. The arrangement picture was drawn from an earlier board — switch it off and on again to draw it from this one.`);
+            setStatus(`That Configuration holds ${occupancy.length} tokens and this board holds ${graph.tokens.length}, so it is not one this board can take. The Configuration picture was drawn from an earlier board — switch it off and on again to draw it from this one.`);
 
             return false;
         }
@@ -1377,7 +1377,7 @@ export function createTokenReconfigurationApp({
         const missingNodeId = occupancy.find(nodeId => !graph.nodeById.has(nodeId));
 
         if (missingNodeId !== undefined) {
-            setStatus(`That arrangement stands on vertex ${missingNodeId}, which is no longer on the board. Redraw the arrangement picture to drop the stale ones.`);
+            setStatus(`That Configuration stands on vertex ${missingNodeId}, which is no longer on the board. Redraw the Configuration picture to drop the stale ones.`);
 
             return false;
         }
@@ -1387,18 +1387,18 @@ export function createTokenReconfigurationApp({
         const movingTokens = proposedTokens.filter(token => !occupancyHolds(occupancy, token.nodeId));
 
         // Tokens already standing on a wanted vertex stay where they are and only
-        // the rest are reassigned, so jumping to a neighbouring arrangement moves
+        // the rest are reassigned, so jumping to a neighbouring Configuration moves
         // the fewest tokens it can rather than redecorating the whole board.
         movingTokens.forEach((token, index) => {
             token.nodeId = freeNodeIds[index];
         });
 
-        // Checked before anything is touched. Every arrangement the panel offers
+        // Checked before anything is touched. Every Configuration the panel offers
         // came out of the rules and so passes, which is exactly why the few that
         // do not — a vertex deleted since, a parameter changed since — should be
         // refused quietly instead of drawn illegally.
         if (!graph.isConfigurationValid(proposedTokens, parameter)) {
-            setStatus("That arrangement is no longer legal under the rule in force, so it was refused.");
+            setStatus("That Configuration is no longer legal under the rule in force, so it was refused.");
 
             return false;
         }
@@ -1414,10 +1414,10 @@ export function createTokenReconfigurationApp({
 
         clearTokenMoveSelection();
         // The vertices and edges did not change. Tell watchers that directly, so
-        // clicking an arrangement moves the marker instead of restarting the
-        // search that produced the arrangement being clicked.
+        // clicking an Configuration moves the marker instead of restarting the
+        // search that produced the Configuration being clicked.
         refreshGraphAfterMutation(
-            `Board moved to the arrangement ${occupancy.map(nodeId => String(nodeId)).join(", ")}.`,
+            `Board moved to the selected Configuration.`,
             "token-moved",
         );
 
@@ -1543,7 +1543,7 @@ export function createTokenReconfigurationApp({
         // canvas it was arranged in and sits outside the visible one, where
         // taps land on empty space. It is scaled rather than laid out again:
         // a layout is one-time now, and what needs fitting may just as well be
-        // a hand-dragged or force-simulated arrangement. Only after the first
+        // a hand-dragged or force-simulated Configuration. Only after the first
         // measurement — before it there is no shape to scale, and vertices
         // would be multiplied out of the origin they were seeded at.
         const previousWidth = width;
@@ -1605,7 +1605,7 @@ export function createTokenReconfigurationApp({
         syncSimulation();
     }
 
-    // Whether the opening arrangement came from the file that was loaded rather
+    // Whether the opening Configuration came from the file that was loaded rather
     // than from a layout. Read once here and never recomputed: a canvas resize
     // must keep such a drawing on its own coordinates, which is the whole point
     // of saying where the vertices go.
@@ -1626,7 +1626,7 @@ export function createTokenReconfigurationApp({
         // too early to be usable.
         setCanvasView(fitGraphToCanvas(graphNodes, width, height));
     } else {
-        // A scenario that only names its vertices has no arrangement at all —
+        // A scenario that only names its vertices has no Configuration at all —
         // the factory seeds them around an origin it cannot size yet — so the
         // opening layout still has to be computed, once, here, now that the
         // canvas has a size. The layouts the user picks are one-time and stay

@@ -34,8 +34,8 @@ const drawnScenarios: Scenario[] = [
     {
         ...small_component,
         id: "small_component",
-        name: "Small example | Six arrangements",
-        description: "Goal: Move the two yellow tokens onto the blue squares. The Arrangement graph shows every legal arrangement of this small board.",
+        name: "Small example | Six configurations",
+        description: "Goal: Move the two yellow tokens onto the blue squares. The Configuration graph shows every legal configuration of this small board.",
     },
 ];
 

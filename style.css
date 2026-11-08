@@ -676,7 +676,7 @@ svg:active {
     stroke-width: 3px;
 }
 
-/* The arrangement graph is a second canvas, hidden until asked for: it is the
+/* The configuration graph is a second canvas, hidden until asked for: it is the
    one part of this app that means nothing before someone has moved a token, and
    an empty framed box on a demo screen reads as a broken one. On wide screens
    it shares the row with the main canvas; on narrow screens the column keeps
@@ -704,7 +704,26 @@ svg:active {
 
 .space-toolbar {
     display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
     padding: 2px 4px 10px;
+}
+
+.space-complete-toggle {
+    margin-left: auto;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    white-space: nowrap;
+}
+
+.space-complete-toggle[aria-pressed="true"] {
+    background: var(--ink);
+    color: var(--panel);
+}
+
+.space-complete-toggle[hidden] {
+    display: none;
 }
 
 .space-frame .canvas-caption-text {
@@ -760,16 +779,6 @@ svg:active {
     stroke-opacity: 0.9;
 }
 
-.space-move-label {
-    fill: var(--ink);
-    font: 500 10px "DM Mono", monospace;
-    paint-order: stroke;
-    stroke: #fbfcfc;
-    stroke-width: 4px;
-    stroke-linejoin: round;
-    pointer-events: none;
-}
-
 .space-node {
     fill: #9fb0bb;
     stroke: #ffffff;
@@ -777,20 +786,26 @@ svg:active {
     cursor: pointer;
 }
 
-/* A legal arrangement whose tokens already fill every marked square. */
+/* A legal configuration whose tokens already fill every marked square. */
 .space-node.is-goal {
     fill: var(--warm);
     stroke: #8a6a2a;
 }
 
-/* The arrangement the board is in right now. */
+/* A dot on the drawn solution route. Goal and current fills take precedence. */
+.space-node.is-on-path {
+    stroke: var(--accent);
+    stroke-width: 2px;
+}
+
+/* The configuration the board is in right now. */
 .space-node.is-current {
     fill: var(--accent);
     stroke: #0b3f3a;
     stroke-width: 2px;
 }
 
-/* Brightness rather than a fill, so hovering an arrangement that is already the
+/* Brightness rather than a fill, so hovering an configuration that is already the
    current one or a goal still says something. */
 .space-node:hover {
     filter: brightness(0.78);
@@ -805,8 +820,9 @@ svg:active {
 .space-descent {
     fill: none;
     stroke: var(--accent);
-    stroke-width: 2.5px;
-    stroke-opacity: 0.5;
+    stroke-width: 4px;
+    stroke-opacity: 0.9;
+    stroke-linecap: round;
     stroke-linejoin: round;
     pointer-events: none;
 }

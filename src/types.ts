@@ -148,9 +148,9 @@ export interface TokenReconfigurationAppConfig {
 }
 
 // What changed on the board, as far as anything watching it is concerned. One
-// distinction earns its keep: a token that MOVES lands on an arrangement that was
+// distinction earns its keep: a token that MOVES lands on an configuration that was
 // already reachable from where it started, while every other change can alter the
-// set of reachable arrangements outright. A watcher that re-derives its whole
+// set of reachable configurations outright. A watcher that re-derives its whole
 // picture on a move would throw away seconds of work on every click.
 export type BoardChangeReason =
     | "token-moved"
@@ -186,9 +186,9 @@ export interface TokenReconfigurationApp {
     // search reads. A copy on purpose: a search outlives the frame it started in,
     // and edits made while it runs must not reach into a picture half-drawn.
     readBoard(): BoardReading;
-    // Puts the tokens on the given vertices, taking the board to an arrangement
+    // Puts the tokens on the given vertices, taking the board to an configuration
     // found elsewhere rather than by a sequence of legal moves. Refused — leaving
-    // the board alone — unless the arrangement is one the rules accept and this
+    // the board alone — unless the configuration is one the rules accept and this
     // board can hold: same number of tokens, every vertex still present. Records
     // one undo step, so a jump is always walkable back.
     applyOccupancy(occupancy: Occupancy): boolean;

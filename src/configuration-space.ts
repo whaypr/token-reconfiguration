@@ -1,6 +1,6 @@
 import type { NodeId } from "./types";
 
-// One arrangement of the tokens, written as the set of vertices carrying one.
+// One configuration of the tokens, written as the set of vertices carrying one.
 // Which token sits where is deliberately not part of it: both problems the app
 // knows answer their rules from positions alone — a closed-neighbourhood count,
 // a shortest-path distance between two tokens — so two boards differing only by
@@ -21,8 +21,8 @@ export interface ConfigurationRecord {
     occupancy: Occupancy;
     // How many single token moves the start lies away. The move relation is
     // symmetric — a slide from an occupied u to an empty neighbour v leaves the
-    // very same arrangement of tokens that a slide back from v to u would
-    // produce, and validity is read off that arrangement — so this one number
+    // very same configuration of tokens that a slide back from v to u would
+    // produce, and validity is read off that configuration — so this one number
     // is the distance to the start in both directions.
     depth: number;
     // One configuration that reaches this one in a single move. Enough to walk
@@ -52,7 +52,7 @@ export const DEFAULT_SPACE_LIMITS: ConfigurationSpaceLimits = {
 
 export interface ConfigurationSpaceOptions {
     start: Occupancy;
-    // Every arrangement one legal move away from the given one. Supplied from
+    // Every configuration one legal move away from the given one. Supplied from
     // outside so this file never has to know what a rule is — and so what the
     // picture shows is produced by the same rules the canvas enforces.
     successorsOf(occupancy: Occupancy): Occupancy[];
@@ -61,7 +61,7 @@ export interface ConfigurationSpaceOptions {
 }
 
 /**
- * The component of the reconfiguration graph around one starting arrangement,
+ * The component of the reconfiguration graph around one starting configuration,
  * grown one move at a time from that start.
  *
  * Breadth-first, and kept in discovery order, so a configuration's depth is
@@ -314,5 +314,98 @@ export class ConfigurationExplorer {
         if (this.halt === "complete") {
             this.halt = reason;
         }
+    }
+}
+
+/**
+ * A route between two configurations, searched from both ends. Each direction is
+ * an ordinary BFS with its own records, so both parent chains are made of legal
+ * slides and can be joined at a shared configuration. A meeting is a valid route,
+ * not a proof that it is the shortest possible route: expanding by time rather
+ * than by whole depth layers deliberately trades that guarantee for a route in
+ * an interactive amount of time.
+ */
+export class SolutionRouteSearch {
+    private route: ConfigurationKey[] | null = null;
+
+    constructor(
+        readonly fromStart: ConfigurationExplorer,
+        readonly fromGoal: ConfigurationExplorer,
+    ) {
+        // One direction may already be fully explored when the visitor changes
+        // the marked vertices. Check its existing records before using that
+        // completion as an unreachability proof or expanding the other side.
+        this.route = this.meetingRoute();
+    }
+
+    /** A start-to-goal sequence, or null while no meeting has been found. */
+    get path(): readonly ConfigurationKey[] | null {
+        return this.route;
+    }
+
+    /**
+     * A completed component with no overlap proves that the two starts are
+     * disjoint. This remains valid even if the other direction hit our limits.
+     */
+    get provesUnreachable(): boolean {
+        return this.route === null && (this.fromStart.conclusive || this.fromGoal.conclusive);
+    }
+
+    get finished(): boolean {
+        return this.route !== null
+            || this.provesUnreachable
+            || (this.stopped(this.fromStart) && this.stopped(this.fromGoal));
+    }
+
+    /** Advance each active direction, stopping as soon as they share a state. */
+    expandWithin(sliceMilliseconds: number): readonly ConfigurationKey[] | null {
+        if (this.route) return this.route;
+        if (this.finished) return null;
+
+        for (const [growing, other] of [[this.fromStart, this.fromGoal], [this.fromGoal, this.fromStart]] as const) {
+            if (!this.stopped(growing)) {
+                growing.expandWithin(sliceMilliseconds / 2);
+            }
+
+            this.route = this.meetingRoute();
+
+            if (this.route || this.finished) {
+                return this.route;
+            }
+        }
+
+        return null;
+    }
+
+    private stopped(explorer: ConfigurationExplorer): boolean {
+        return explorer.pending === 0 || explorer.haltReason !== "complete";
+    }
+
+    private meetingRoute(): ConfigurationKey[] | null {
+        const [smaller, larger] = this.fromStart.size <= this.fromGoal.size
+            ? [this.fromStart, this.fromGoal] as const
+            : [this.fromGoal, this.fromStart] as const;
+        let meeting: ConfigurationKey | null = null;
+        let shortestSum = Infinity;
+
+        for (const record of smaller.configurations()) {
+            const other = larger.recordAt(record.key);
+            const total = other ? record.depth + other.depth : Infinity;
+
+            if (total < shortestSum) {
+                meeting = record.key;
+                shortestSum = total;
+            }
+        }
+
+        if (meeting === null) return null;
+
+        // fromStart: initial configuration -> meeting.
+        // fromGoal: goal -> meeting; reversing supplies meeting -> goal.
+        // The meeting is in both chains, so remove its duplicate at the seam.
+        return [
+            ...this.fromStart.pathToStart(meeting),
+            ...this.fromGoal.pathToStart(meeting).reverse().slice(1),
+        ];
     }
 }

@@ -29,9 +29,9 @@ export interface TokenMove {
 
 export interface ConfigurationProbe {
     compareIds(left: NodeId, right: NodeId): number;
-    /** Every arrangement one legal token slide away, as occupancies. */
+    /** Every configuration one legal token slide away, as occupancies. */
     successorsOf(occupancy: Occupancy): Occupancy[];
-    /** Whether the rules would accept this arrangement at all. */
+    /** Whether the rules would accept this configuration at all. */
     isValid(occupancy: Occupancy): boolean;
     vertexCount: number;
     tokenCount: number;
@@ -39,10 +39,10 @@ export interface ConfigurationProbe {
 
 /**
  * A question-and-answer stand for the board: a graph of its own holding the same
- * vertices and edges, whose tokens are replaced by the arrangement being asked
+ * vertices and edges, whose tokens are replaced by the configuration being asked
  * about.
  *
- * This exists so the search can ask about arrangements that are not on screen —
+ * This exists so the search can ask about configurations that are not on screen —
  * and so that it asks the REAL rules. `Graph` is itself the context the problems
  * read (every rule method is handed `this`), and each of them answers from the
  * graph's own `tokens`, so substituting the tokens on a throwaway graph is
@@ -96,7 +96,7 @@ export function createConfigurationProbe(reading: BoardReading): ConfigurationPr
                     successors.push(sorted([
                         // The vertex the token leaves is out, the one it arrives
                         // at is in. Everything else is untouched, which is what
-                        // makes this a slide rather than a rearrangement.
+                        // makes this a slide rather than a reconfiguration.
                         ...occupancy.filter(nodeId => compareIds(nodeId, token.nodeId) !== 0),
                         targetNodeId,
                     ]));
@@ -119,10 +119,10 @@ function occupancySize(reading: BoardReading): number {
 
 /**
  * A configuration's identity. JSON rather than a joined string so an id that
- * holds the separator cannot make two different arrangements collide — `["1|2"]`
+ * holds the separator cannot make two different configurations collide — `["1|2"]`
  * and `["1","2"]` have to be two dots, not one.
  *
- * Sorted first, because the arrangement is a SET of occupied vertices: the same
+ * Sorted first, because the configuration is a SET of occupied vertices: the same
  * tokens listed in another order are the same configuration, and an unsorted key
  * would spend a slot of the search's budget on every order it was seen in.
  */
@@ -134,7 +134,7 @@ export function occupanciesCover(goals: NodeId[], occupancy: Occupancy, compareI
     return goals.every(goalNodeId => occupancy.some(nodeId => compareIds(nodeId, goalNodeId) === 0));
 }
 
-/** The one slide between two arrangements, or null when they differ in any other way. */
+/** The one slide between two configurations, or null when they differ in any other way. */
 export function moveBetweenOccupancies(before: Occupancy, after: Occupancy, compareIds: (left: NodeId, right: NodeId) => number): TokenMove | null {
     const left = [...before].sort(compareIds);
     const right = [...after].sort(compareIds);

@@ -1,6 +1,6 @@
 import * as d3 from "d3";
 import type { D3ZoomEvent, Selection, ZoomTransform } from "d3";
-import { ConfigurationExplorer } from "./configuration-space";
+import { ConfigurationExplorer, SolutionRouteSearch } from "./configuration-space";
 import type { ConfigurationRecord, Occupancy } from "./configuration-space";
 import { createConfigurationProbe, makeOccupancyKey, moveBetweenOccupancies, occupanciesCover } from "./configuration-board";
 import type { BoardReading, TokenMove } from "./configuration-board";
@@ -14,6 +14,14 @@ type SpaceView = "rings" | "tree";
 // bounded separately by the explorer's own clock.
 const SLICE_MILLISECONDS = 8;
 
+// A full, legal target can also be searched backwards. Each direction is
+// bounded independently; neither budget is evidence that a solution is absent.
+const GOAL_SEARCH_LIMITS = {
+    maxConfigurations: 6000,
+    maxDepth: 36,
+    maxMilliseconds: 3000,
+};
+
 // Ring spacing inside the panel. The innermost ring is held off the centre dot so
 // the start is readable on top of its own ring, and the outer ring leaves room
 // for the "N moves" label that sits just outside it.
@@ -21,9 +29,6 @@ const INNER_RING_FRACTION = 0.26;
 const OUTER_PADDING_PX = 26;
 
 const DOT_RADIUS_PX = 5;
-// A label per branch is legible on small demonstration trees. Dense trees keep
-// their clean geometry, with the same move supplied by the hover/focus readout.
-const MAX_LABELED_BRANCHES = 60;
 
 interface LayoutPoint {
     key: string;
@@ -40,7 +45,6 @@ interface PanelElements {
     edgeLayer: Selection<SVGGElement, unknown, null, undefined>;
     pathLayer: Selection<SVGGElement, unknown, null, undefined>;
     nodeLayer: Selection<SVGGElement, unknown, null, undefined>;
-    labelLayer: Selection<SVGGElement, unknown, null, undefined>;
 }
 
 export interface ReconfigurationPanelOptions {
@@ -48,10 +52,11 @@ export interface ReconfigurationPanelOptions {
     readoutSelector: string;
     descriptionSelector: string;
     tabsSelector: string;
+    completeGraphSelector: string;
     // Read fresh every time, because the scenario changes underneath the panel:
     // picking a scenario tears the app down and builds a new one.
     getBoard(): BoardReading | null;
-    // Puts the board into the given arrangement. Returns false when it could not.
+    // Puts the board into the given configuration. Returns false when it could not.
     applyOccupancy(occupancy: Occupancy): boolean;
     setMovePreview(move: TokenMove | null): void;
     setStatus(message: string): void;
@@ -71,10 +76,10 @@ function formatCount(value: number): string {
 }
 
 /**
- * One dot per arrangement, on a ring per move count, the start at the centre.
+ * One dot per configuration, on a ring per move count, the start at the centre.
  *
  * Depth-first rings rather than a force layout: the whole point of the picture is
- * the DISTANCE from the starting arrangement, and a force layout would spend its
+ * the DISTANCE from the starting configuration, and a force layout would spend its
  * one readable signal on clustering instead. Configurations are laid out in the
  * order they were discovered, which keeps the children of a configuration next to
  * each other and the branches apart, for free.
@@ -121,10 +126,12 @@ function layoutRings(records: ConfigurationRecord[], width: number, height: numb
 }
 
 /**
- * The BFS discovery tree, with the start at the left and each successive move
- * count one column to the right. Leaves take consecutive rows; a parent sits in
- * the middle of its children's span. This keeps whole branches together instead
- * of weaving the cross-links that make a larger move graph difficult to follow.
+ * The explored move tree, with the start at the left. It follows the BFS
+ * discovery tree while searching; once a route is found, the records supplied
+ * by recordsForTree root the same explored states along that route instead.
+ * Leaves take consecutive rows and a parent sits in the middle of its children's
+ * span, keeping branches together instead of drawing all of the graph's
+ * cross-links in a small panel.
  */
 function layoutTree(records: ConfigurationRecord[], width: number, height: number): Map<string, LayoutPoint> {
     const points = new Map<string, LayoutPoint>();
@@ -187,6 +194,7 @@ export function createReconfigurationPanel({
     readoutSelector,
     descriptionSelector,
     tabsSelector,
+    completeGraphSelector,
     getBoard,
     applyOccupancy,
     setMovePreview,
@@ -196,7 +204,9 @@ export function createReconfigurationPanel({
     const readout = document.querySelector(readoutSelector) as HTMLElement | null;
     const description = document.querySelector(descriptionSelector);
     const tabs = [...document.querySelectorAll<HTMLButtonElement>(`${tabsSelector} [data-view]`)];
+    const completeGraphButton = document.querySelector<HTMLButtonElement>(completeGraphSelector);
     let view: SpaceView = "rings";
+    let completeGraph = false;
 
 
     svg.style("touch-action", "none");
@@ -209,7 +219,6 @@ export function createReconfigurationPanel({
         edgeLayer: viewport.append("g").attr("class", "space-edge-layer"),
         pathLayer: viewport.append("g").attr("class", "space-path-layer"),
         nodeLayer: viewport.append("g").attr("class", "space-node-layer"),
-        labelLayer: viewport.append("g").attr("class", "space-label-layer"),
     };
 
     let width = 0;
@@ -225,6 +234,13 @@ export function createReconfigurationPanel({
     let goalKeys: string[] = [];
     let distancesToGoal = new Map<string, number>();
     let currentGoalNodeIds: NodeId[] = [];
+    let goalTargetKey = "[]";
+    let routeSearch: SolutionRouteSearch | null = null;
+    let solutionRoute: readonly string[] = [];
+    let solutionRecords = new Map<string, ConfigurationRecord>();
+    // The displayed tree can attach an explored branch through a different legal
+    // edge after a solution is found. Keep those actual predecessors for previews.
+    let treeRecords = new Map<string, ConfigurationRecord>();
     let hoveredKey: string | null = null;
     let destroyed = false;
     let centred = false;
@@ -286,6 +302,38 @@ export function createReconfigurationPanel({
 
     syncCanvasSize();
 
+    function prepareRouteSearch(board: BoardReading): void {
+        routeSearch = null;
+        solutionRoute = [];
+        solutionRecords = new Map();
+
+        if (!explorer || !probe) return;
+
+        const marked = [...board.goalNodeIds].sort(probe.compareIds);
+        currentGoalNodeIds = marked;
+        goalTargetKey = makeOccupancyKey(marked, probe.compareIds);
+
+        // Fewer marks than tokens permit many goal configurations. There is no
+        // single legal seed to search backwards from in that case; the ordinary
+        // component BFS still finds any configuration that covers all of them.
+        if (marked.length !== explorer.recordAt(explorer.startKey)!.occupancy.length
+            || goalTargetKey === explorer.startKey
+            || !probe.isValid(marked)) {
+            return;
+        }
+
+        // A separate probe gives each direction an independent hypothetical
+        // board, even though both ultimately query exactly the same problem rules.
+        const reverseProbe = createConfigurationProbe({ ...board, occupancy: marked });
+        const fromGoal = new ConfigurationExplorer({
+            start: marked,
+            successorsOf: occupancy => reverseProbe.successorsOf(occupancy),
+            makeKey: occupancy => makeOccupancyKey(occupancy, reverseProbe.compareIds),
+            limits: GOAL_SEARCH_LIMITS,
+        });
+        routeSearch = new SolutionRouteSearch(explorer, fromGoal);
+    }
+
     function startSearch(): void {
         if (destroyed || !open) {
             return;
@@ -315,14 +363,21 @@ export function createReconfigurationPanel({
         const start = [...board.occupancy].sort(activeProbe.compareIds);
         currentKey = makeOccupancyKey(start, activeProbe.compareIds);
 
+        const marked = [...board.goalNodeIds].sort(activeProbe.compareIds);
+        const markedKey = makeOccupancyKey(marked, activeProbe.compareIds);
+        const hasExplicitTarget = marked.length === start.length
+            && markedKey !== currentKey
+            && activeProbe.isValid(marked);
         explorer = new ConfigurationExplorer({
             start,
             successorsOf: occupancy => activeProbe.successorsOf(occupancy),
             makeKey: occupancy => makeOccupancyKey(occupancy, activeProbe.compareIds),
+            limits: hasExplicitTarget ? GOAL_SEARCH_LIMITS : undefined,
         });
 
         goalKeys = [];
         distancesToGoal = new Map();
+        prepareRouteSearch(board);
 
         // Nothing to arrange: an empty board, or one with no tokens to move.
         if (board.nodeIds.length === 0 || start.length === 0) {
@@ -350,14 +405,22 @@ export function createReconfigurationPanel({
                 return;
             }
 
-            explorer.expandWithin(SLICE_MILLISECONDS);
+            const found = routeSearch
+                ? routeSearch.expandWithin(SLICE_MILLISECONDS)
+                : (explorer.expandWithin(SLICE_MILLISECONDS), null);
+            const foundNewRoute = found !== null && solutionRoute.length === 0;
 
-            // A frontier that has been fully expanded, or a limit reached. Both
-            // mean there is nothing more this explorer can find, so asking again
-            // would only burn frames.
-            const finished = explorer.pending === 0 || explorer.haltReason !== "complete";
+            if (foundNewRoute) {
+                setSolutionRoute(found);
+            }
 
-            if (explorer.maxDepthSeen !== lastDepth || finished) {
+            // With a full legal target, either frontier can find the other.
+            // Otherwise this is the same forward component search as before.
+            const finished = routeSearch
+                ? routeSearch.finished
+                : explorer.pending === 0 || explorer.haltReason !== "complete";
+
+            if (explorer.maxDepthSeen !== lastDepth || foundNewRoute || finished) {
                 lastDepth = explorer.maxDepthSeen;
                 render();
             }
@@ -375,10 +438,119 @@ export function createReconfigurationPanel({
         }
 
         explorer?.cancel();
+        routeSearch?.fromGoal.cancel();
+    }
+
+    function recordForDisplay(key: string): ConfigurationRecord | null {
+        return (view === "tree" ? treeRecords.get(key) : undefined)
+            ?? solutionRecords.get(key) ?? explorer?.recordAt(key) ?? null;
+    }
+
+    function setSolutionRoute(route: readonly string[]): void {
+        const records: ConfigurationRecord[] = [];
+
+        for (const [depth, key] of route.entries()) {
+            const record = explorer?.recordAt(key) ?? routeSearch?.fromGoal.recordAt(key);
+
+            if (!record) return;
+
+            records.push({
+                key,
+                occupancy: record.occupancy,
+                // In a bidirectional route this is the position along the shown
+                // route, not a claim that it is the shortest distance from start.
+                depth,
+                parentKey: depth === 0 ? null : route[depth - 1],
+            });
+        }
+
+        solutionRoute = route;
+        solutionRecords = new Map(records.map(record => [record.key, record]));
     }
 
     /**
-     * Which arrangements meet the goal, and how far every other one is from
+     * While there is no solution, this is the same growing BFS tree as Rings.
+     * After the two searches meet, show both sets of explored configurations once,
+     * with the selected legal route as the backbone of one rooted spanning tree.
+     *
+     * Claim the route first, then attach every remaining explored state through
+     * a discovered legal edge. This avoids duplicate configurations where the two
+     * frontiers overlap, and lets a state inherited from the goal search take a
+     * predecessor towards the actual start. Off-route branches are retained,
+     * not called dead ends: in an undirected move graph they may lead back to
+     * the goal through another state. Their displayed depth is their depth in
+     * this presentation tree, not a claim that the selected route is shortest.
+     */
+    function recordsForTree(): ConfigurationRecord[] {
+        if (!explorer) return [];
+        if (solutionRoute.length === 0 || (routeSearch !== null && routeSearch.path === null)) {
+            return explorer.configurations();
+        }
+
+        const known = new Map(explorer.configurations().map(record => [record.key, record]));
+        for (const record of routeSearch?.fromGoal.configurations() ?? []) {
+            if (!known.has(record.key)) known.set(record.key, record);
+        }
+
+        const rooted = new Map<string, ConfigurationRecord>();
+        const queue: string[] = [];
+        for (const [depth, key] of solutionRoute.entries()) {
+            const record = known.get(key)!;
+            rooted.set(key, {
+                ...record,
+                depth,
+                parentKey: depth === 0 ? null : solutionRoute[depth - 1],
+            });
+            queue.push(key);
+        }
+
+        for (let cursor = 0; cursor < queue.length; cursor += 1) {
+            const parent = rooted.get(queue[cursor])!;
+            const neighbours = [
+                ...explorer.neighboursOf(parent.key),
+                ...(routeSearch?.fromGoal.neighboursOf(parent.key) ?? []),
+            ];
+
+            for (const key of neighbours) {
+                const record = known.get(key);
+                if (!record || rooted.has(key)) continue;
+
+                rooted.set(key, { ...record, depth: parent.depth + 1, parentKey: parent.key });
+                queue.push(key);
+            }
+        }
+
+        return [...rooted.values()];
+    }
+
+    /** Every legal edge found among the configurations included in the move view. */
+    function allDiscoveredEdges(points: Map<string, LayoutPoint>): Array<{ from: LayoutPoint; to: LayoutPoint }> {
+        const edges = new Map<string, { from: LayoutPoint; to: LayoutPoint }>();
+        const discovered = [
+            ...(explorer?.edges ?? []),
+            // The goal search's records join the displayed tree only when a
+            // meeting supplies a start-to-goal backbone. Add its edges then too.
+            ...(routeSearch?.path ? routeSearch.fromGoal.edges : []),
+        ];
+
+        for (const edge of discovered) {
+            const from = points.get(edge.from);
+            const to = points.get(edge.to);
+            if (!from || !to) continue;
+
+            edges.set(layoutEdgeKey({ from, to }), { from, to });
+        }
+
+        return [...edges.values()];
+    }
+
+    /** One identity for an undirected edge, whichever direction found it first. */
+    function layoutEdgeKey({ from, to }: { from: LayoutPoint; to: LayoutPoint }): string {
+        return JSON.stringify(from.key < to.key ? [from.key, to.key] : [to.key, from.key]);
+    }
+
+    /**
+     * Which configurations meet the goal, and how far every other one is from
      * meeting it. Every marked vertex has to carry a token; extra tokens elsewhere
      * are allowed, so a level can mark three squares on a board holding five
      * tokens.
@@ -398,6 +570,22 @@ export function createReconfigurationPanel({
         }
 
         distancesToGoal = explorer.distancesFrom(goalKeys);
+
+        // BFS discovers the nearest goal first. Its parent chain is therefore
+        // one shortest, completely legal route from the original start. Choose
+        // just one such route rather than filling the small panel with branches
+        // that all reach the same place through different move orders.
+        const nearestGoal = goalKeys[0];
+
+        if (nearestGoal && solutionRoute.length === 0) {
+            setSolutionRoute(explorer.pathToStart(nearestGoal));
+        }
+
+        // A bidirectional route can reach a goal that is not in the forward
+        // component picture yet; it must still be visibly marked as a goal.
+        if (solutionRoute.length > 0) {
+            goalKeys = [...new Set([...goalKeys, solutionRoute[solutionRoute.length - 1]])];
+        }
     }
 
     function moveInto(key: string | null): TokenMove | null {
@@ -405,34 +593,45 @@ export function createReconfigurationPanel({
             return null;
         }
 
-        const record = explorer.recordAt(key);
-        const parent = record?.parentKey ? explorer.recordAt(record.parentKey) : null;
+        const record = recordForDisplay(key);
+        const parent = record?.parentKey ? recordForDisplay(record.parentKey) : null;
 
         return record && parent
             ? moveBetweenOccupancies(parent.occupancy, record.occupancy, probe.compareIds)
             : null;
     }
 
+    function isPreviewEdge(edge: { from: LayoutPoint; to: LayoutPoint }, key: string | null): boolean {
+        if (key === null) return false;
+
+        // In the complete graph an edge may connect columns in either direction,
+        // so find the actual displayed predecessor rather than comparing depths.
+        const parentKey = recordForDisplay(key)?.parentKey;
+        return parentKey !== null && parentKey !== undefined
+            && ((edge.from.key === parentKey && edge.to.key === key)
+                || (edge.from.key === key && edge.to.key === parentKey));
+    }
+
     function highlightPoint(key: string | null): void {
         hoveredKey = key;
         setMovePreview(moveInto(key));
         // Recolour just the existing edge selection, not the whole join. A graph
-        // with thousands of arrangements must not be rebuilt for every hover.
+        // with thousands of configurations must not be rebuilt for every hover.
         elements.edgeLayer.selectAll<SVGLineElement, { from: LayoutPoint; to: LayoutPoint }>(".space-edge")
-            .classed("is-preview", edge => key !== null && (edge.from.depth > edge.to.depth ? edge.from.key : edge.to.key) === key);
+            .classed("is-preview", edge => isPreviewEdge(edge, key));
         renderReadout();
     }
 
     function describeVerdict(): string {
         if (!explorer || !probe) {
-            return "Open a graph to see its arrangements.";
+            return "Open a graph to see its configurations.";
         }
 
         if (currentGoalNodeIds.length === 0) {
             return "No square is marked yet, so there is nothing to aim at. Alt+click vertices to mark where the tokens should end up.";
         }
 
-        if (currentKey !== null && distancesToGoal.get(currentKey) === 0) {
+        if (currentKey !== null && goalKeys.includes(currentKey)) {
             return "Solved: every marked vertex carries a token.";
         }
 
@@ -442,12 +641,24 @@ export function createReconfigurationPanel({
             return `Shortest way left to the marked squares: ${remaining} move${remaining === 1 ? "" : "s"}.`;
         }
 
+        const routeIndex = currentKey === null ? -1 : solutionRoute.indexOf(currentKey);
+
+        if (routeIndex >= 0) {
+            const moves = solutionRoute.length - 1 - routeIndex;
+            return `A legal solution route from this configuration: ${moves} move${moves === 1 ? "" : "s"}.`;
+        }
+
+        if (routeSearch?.provesUnreachable) {
+            return "No legal solution path: the fully marked configuration lies in a different component from the starting configuration.";
+        }
+
+
         // Only a search that ran to the end of the component is allowed to say a
         // goal cannot be reached. Anything else and the honest sentence is that
         // the search stopped, which is a different claim about the world.
         if (!explorer.conclusive) {
             const why = explorer.haltReason === "state-limit"
-                ? `after ${formatCount(explorer.limitsInUse.maxConfigurations)} arrangements`
+                ? `after ${formatCount(explorer.limitsInUse.maxConfigurations)} configurations`
                 : explorer.haltReason === "depth-limit"
                     ? `at ${explorer.limitsInUse.maxDepth} moves out`
                     : `after ${(explorer.limitsInUse.maxMilliseconds / 1000).toFixed(1)} s`;
@@ -456,25 +667,17 @@ export function createReconfigurationPanel({
         }
 
         // If there are exactly as many marked vertices as tokens, the marks
-        // themselves name ONE arrangement, whose legality we can check directly.
-        // With fewer marks, many arrangements could cover them: checking just the
+        // themselves name ONE configuration, whose legality we can check directly.
+        // With fewer marks, many configurations could cover them: checking just the
         // marked vertices would not prove that any completion with the right
         // number of tokens is legal, so do not claim one exists in another
         // component.
         if (currentGoalNodeIds.length === probe.tokenCount
             && probe.isValid([...currentGoalNodeIds].sort(probe.compareIds))) {
-            return "The arrangement on the marked squares is legal, but no sequence of legal moves reaches it from the starting arrangement.";
+            return "The configuration on the marked squares is legal, but no sequence of legal moves reaches it from the starting configuration.";
         }
 
-        return "No legal arrangement with a token on every marked square is reachable from the starting arrangement.";
-    }
-
-    function describeOccupancy(occupancy: Occupancy | null): string {
-        if (!occupancy || occupancy.length === 0) {
-            return "no tokens on the board";
-        }
-
-        return `here: ${occupancy.map(id => String(id)).join(" · ")}`;
+        return "No legal configuration with a token on every marked square is reachable from the starting configuration.";
     }
 
     function renderReadout(): void {
@@ -482,14 +685,20 @@ export function createReconfigurationPanel({
             return;
         }
 
-        const hovered = hoveredKey && explorer ? explorer.recordAt(hoveredKey) : null;
+        const hovered = hoveredKey ? recordForDisplay(hoveredKey) : null;
         const lines: string[] = [];
 
         if (explorer) {
-            const counts = `${formatCount(explorer.size)} arrangement${explorer.size === 1 ? "" : "s"} within ${explorer.maxDepthSeen} move${explorer.maxDepthSeen === 1 ? "" : "s"}`;
+            const counts = view === "tree"
+                ? `${formatCount(treeRecords.size)} explored configuration${treeRecords.size === 1 ? "" : "s"} in this ${completeGraph ? "graph" : "tree"}`
+                : `${formatCount(explorer.size)} configuration${explorer.size === 1 ? "" : "s"} within ${explorer.maxDepthSeen} move${explorer.maxDepthSeen === 1 ? "" : "s"}`;
             const status = explorer.conclusive
                 ? "the whole component"
-                : explorer.haltReason !== "complete"
+                : solutionRoute.length > 0
+                    ? "solution route found"
+                    : routeSearch?.finished
+                        ? "goal search stopped"
+                        : explorer.haltReason !== "complete"
                     ? `stopped ${explorer.haltReason === "state-limit"
                         ? `at ${formatCount(explorer.limitsInUse.maxConfigurations)}`
                         : explorer.haltReason === "depth-limit"
@@ -505,13 +714,9 @@ export function createReconfigurationPanel({
         lines.push(describeVerdict());
 
         if (hovered) {
-            const move = moveInto(hovered.key);
-            lines.push(move
-                ? `Move into this branch: token ${String(move.from)} → ${String(move.to)} (from the preceding arrangement).`
-                : "Starting arrangement: no incoming move.");
-            lines.push(`that arrangement: ${hovered.occupancy.map(id => String(id)).join(" · ")} — ${hovered.depth} move${hovered.depth === 1 ? "" : "s"} from the start`);
-        } else {
-            lines.push(describeOccupancy(explorer?.recordAt(currentKey ?? "")?.occupancy ?? null));
+            lines.push(hovered.parentKey === null
+                ? "Starting configuration: no incoming move."
+                : `Configuration on this branch: ${hovered.depth} move${hovered.depth === 1 ? "" : "s"} from the start.`);
         }
 
         readout.textContent = "";
@@ -526,7 +731,14 @@ export function createReconfigurationPanel({
     function render(): void {
         measureAgainstGoal();
 
-        const records = explorer?.configurations() ?? [];
+        const allRecords = [
+            ...(explorer?.configurations() ?? []),
+            ...solutionRoute
+                .filter(key => explorer !== null && !explorer.recordAt(key))
+                .map(key => solutionRecords.get(key)!),
+        ];
+        const records = view === "tree" ? recordsForTree() : allRecords;
+        treeRecords = view === "tree" ? new Map(records.map(record => [record.key, record])) : new Map();
         const points = view === "tree"
             ? layoutTree(records, width || 800, height || 500)
             : layoutRings(records, width || 800, height || 500);
@@ -547,18 +759,20 @@ export function createReconfigurationPanel({
             .attr("r", depth => deepest === 0 ? 0 : maxRadius * (INNER_RING_FRACTION + (1 - INNER_RING_FRACTION) * (depth / deepest)))
             .attr("fill", "none");
 
-        const edges = (explorer?.edges ?? [])
-            // Rings show every legal move. The tree keeps only the parent edge
-            // that first discovered each arrangement; all shortest routes still
-            // come from the complete graph below.
-            .filter(edge => view === "rings"
-                || explorer?.recordAt(edge.from)?.parentKey === edge.to
-                || explorer?.recordAt(edge.to)?.parentKey === edge.from)
-            .map(edge => ({ from: points.get(edge.from), to: points.get(edge.to) }))
-            .filter((edge): edge is { from: LayoutPoint; to: LayoutPoint } => Boolean(edge.from && edge.to));
+        const edges = view === "tree" && completeGraph
+            ? allDiscoveredEdges(points)
+            : view === "tree"
+            ? records.flatMap(record => {
+                const parent = record.parentKey === null ? undefined : points.get(record.parentKey);
+                const child = points.get(record.key);
+                return parent && child ? [{ from: parent, to: child }] : [];
+            })
+            : (explorer?.edges ?? [])
+                .map(edge => ({ from: points.get(edge.from), to: points.get(edge.to) }))
+                .filter((edge): edge is { from: LayoutPoint; to: LayoutPoint } => Boolean(edge.from && edge.to));
 
         elements.edgeLayer.selectAll<SVGLineElement, { from: LayoutPoint; to: LayoutPoint }>(".space-edge")
-            .data(edges, edge => `${edge.from.key}|${edge.to.key}`)
+            .data(edges, layoutEdgeKey)
             .join(
                 enter => enter.append("line").attr("class", "space-edge"),
                 update => update,
@@ -568,45 +782,22 @@ export function createReconfigurationPanel({
             .attr("y1", edge => edge.from.y)
             .attr("x2", edge => edge.to.x)
             .attr("y2", edge => edge.to.y)
-            .classed("is-preview", edge => (edge.from.depth > edge.to.depth ? edge.from.key : edge.to.key) === hoveredKey);
+            .classed("is-preview", edge => isPreviewEdge(edge, hoveredKey));
 
-        const moveLabels: Array<{ key: string; x: number; y: number; move: TokenMove }> = [];
-
-        if (view === "tree" && records.length <= MAX_LABELED_BRANCHES) {
-            for (const edge of edges) {
-                const child = edge.from.depth > edge.to.depth ? edge.from : edge.to;
-                const move = moveInto(child.key);
-
-                if (move) {
-                    moveLabels.push({
-                        key: child.key,
-                        x: (edge.from.x + edge.to.x) / 2,
-                        y: (edge.from.y + edge.to.y) / 2 - 6,
-                        move,
-                    });
-                }
-            }
-        }
-
-        elements.labelLayer.selectAll<SVGTextElement, { key: string; x: number; y: number; move: TokenMove }>(".space-move-label")
-            .data(moveLabels, label => label.key)
-            .join(
-                enter => enter.append("text")
-                    .attr("class", "space-move-label")
-                    .attr("text-anchor", "middle"),
-                update => update,
-                exit => exit.remove(),
-            )
-            .attr("x", label => label.x)
-            .attr("y", label => label.y)
-            .text(label => `${String(label.move.from)} → ${String(label.move.to)}`);
-
-        // The way down to the nearest marked arrangement, drawn from the dot the
+        // The way down to the nearest marked configuration, drawn from the dot the
         // board is actually on. Same information as "N moves left", in a form a
         // visitor can follow with a finger.
         const descent: LayoutPoint[] = [];
 
-        if (explorer && currentKey && distancesToGoal.has(currentKey)) {
+        if (view === "tree" || (routeSearch?.path && (currentKey === null || !distancesToGoal.has(currentKey)))) {
+            // Use the selected parent chain itself, not another downhill walk
+            // that could choose a different shortest route whose dots were
+            // trimmed from this view.
+            for (const key of solutionRoute) {
+                const point = points.get(key);
+                if (point) descent.push(point);
+            }
+        } else if (explorer && currentKey && distancesToGoal.has(currentKey)) {
             let cursor: string | null = currentKey;
 
             // Walks downhill on the distances measured from the goals. Each hop
@@ -676,7 +867,7 @@ export function createReconfigurationPanel({
                         }
 
                         if (applyOccupancy(point.occupancy)) {
-                            setStatus(`Jumped to the arrangement ${point.depth} moves from where the level starts. The jump itself is not a legal move — Ctrl+Z puts the board back.`);
+                            setStatus(`Jumped to the configuration ${point.depth} moves from where the level starts. The jump itself is not a legal move — Ctrl+Z puts the board back.`);
                         }
                     }),
                 update => update,
@@ -684,7 +875,7 @@ export function createReconfigurationPanel({
             )
             .attr("cx", point => point.x)
             .attr("cy", point => point.y)
-            .attr("aria-label", point => `${goalKeys.includes(point.key) ? "Goal arrangement" : "Arrangement"}: ${point.occupancy.map(id => String(id)).join(", ")}. ${point.depth} move${point.depth === 1 ? "" : "s"} from the start. Enter to go here.`)
+            .attr("aria-label", point => `${goalKeys.includes(point.key) ? "Goal configuration" : "Configuration"}, ${point.depth} move${point.depth === 1 ? "" : "s"} from the start. Enter to go here.`)
             .classed("is-goal", point => goalKeys.includes(point.key))
             .classed("is-on-path", point => descent.some(node => node.key === point.key))
             .classed("is-current", point => point.key === currentKey);
@@ -712,13 +903,21 @@ export function createReconfigurationPanel({
             tab.tabIndex = active ? 0 : -1;
         }
 
-        if (description) {
-            description.textContent = view === "tree"
-                ? "Shortest-route branches from the starting arrangement on the left. Each column is one move further out; cross-links are omitted."
-                : "One dot for every arrangement the rules allow, one line for every single move between them. The middle dot is where the board started; a ring is one move further out.";
+        if (completeGraphButton) {
+            completeGraphButton.hidden = view !== "tree";
+            completeGraphButton.setAttribute("aria-pressed", String(view === "tree" && completeGraph));
         }
 
-        readout?.parentElement?.setAttribute("aria-label", `${activeTab?.textContent ?? "Arrangement"} view`);
+        if (description) {
+            description.textContent = view === "rings"
+                ? "One dot for every configuration the rules allow, one line for every single move between them. The middle dot is where the board started; a ring is one move further out."
+                : completeGraph
+                    ? "The same explored configurations with every discovered legal edge, including cross-links. The selected solution path remains highlighted."
+                    : "The tree grows as configurations are explored. A legal start-to-goal path is highlighted from left to right; other explored branches remain visible in muted colours.";
+        }
+
+        const viewName = view === "tree" && completeGraph ? "Configuration graph with cross-links" : activeTab?.textContent ?? "Configuration graph";
+        readout?.parentElement?.setAttribute("aria-label", `${viewName} view`);
     }
 
     for (const [index, tab] of tabs.entries()) {
@@ -746,6 +945,24 @@ export function createReconfigurationPanel({
             }
         });
     }
+
+    function toggleCompleteGraph(): void {
+        if (destroyed || view !== "tree") return;
+
+        completeGraph = !completeGraph;
+        updateViewControls();
+        render();
+    }
+
+    completeGraphButton?.addEventListener("click", toggleCompleteGraph);
+    completeGraphButton?.addEventListener("keydown", event => {
+        if (event.repeat || (event.key !== "Enter" && event.key !== " ")) return;
+
+        // One activation path for the keyboard and pointer; cancelling the
+        // default button activation prevents Enter from toggling it twice.
+        event.preventDefault();
+        toggleCompleteGraph();
+    });
 
     updateViewControls();
 
@@ -790,6 +1007,17 @@ export function createReconfigurationPanel({
             const board = getBoard();
 
             if (!board) {
+                return;
+            }
+
+            // Moving tokens keeps the same full component and the same goal;
+            // only the current marker and descent need to change. New marks
+            // instead need a new backward seed, so restart both searches from
+            // the actual current board rather than retaining a previous target.
+            const nextGoalTargetKey = makeOccupancyKey(board.goalNodeIds, probe.compareIds);
+
+            if (nextGoalTargetKey !== goalTargetKey) {
+                startSearch();
                 return;
             }
 
