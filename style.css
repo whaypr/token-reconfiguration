@@ -20,7 +20,18 @@
     --hint-movable: #11b119;
     --hint-frozen: #dc0025a4;
     --hint-placeable: #f2b84b;
+    /* How much of the width the docked control panel may take, and what is left
+       of it when collapsed — wide enough that the word "Controls", turned
+       sideways, still says what the rail is. */
+    --panel-width: clamp(262px, 23vw, 330px);
+    --panel-rail-width: 48px;
 }
+
+/* Below 1100px the panel would leave too little canvas to edit in, so it stops
+   sharing the row and becomes a drawer over the canvas instead. The number is
+   written out at every @media that carries it — a custom property cannot be read
+   inside a media query — and the same 1100 is DOCK_MIN_WIDTH in panel-layout.ts,
+   which has to know the shape too in order to label its own button. */
 
 * {
     box-sizing: border-box;
@@ -34,18 +45,41 @@ body {
     background: var(--canvas);
     color: var(--ink);
     margin: 0;
-    padding: 28px clamp(16px, 4vw, 56px) 44px;
+    /* The gutter is the only margin now that the app runs edge to edge, so it is
+       a breath rather than a page margin: 3vw, capped, because past a certain
+       width more outside space is just distance from the drawing. */
+    padding: 22px clamp(16px, 3vw, 40px);
+    /* The page stops at the viewport instead of growing down the canvas: the
+       header and the status line are chrome that stays put, and the canvases
+       below take whatever height is left. That is what keeps the controls
+       reachable without scrolling to the top of the page — nothing is further
+       down than the edge of the screen.
+       `auto`, not `hidden`: the canvases have a minimum height that matters more
+       than fitting (a canvas squashed to 120px cannot be edited at all), and when
+       the window or an open interaction guide makes the two disagree, the page
+       scrolls for it rather than clipping the drawing. */
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
 }
 
+/* Full width, with only the body's gutter between the app and the edge of the
+   window. The 1440px column this used to sit in was right when the page was a
+   document read top to bottom; as a shell the wide space is the point, and a
+   graph is the one thing here that never suffers from more of it — the two
+   canvases and the panel take the whole run, and a reader on a large display
+   sees more of the drawing instead of more of the margin. */
 .app-header,
 .workspace {
-    width: min(100%, 1440px);
+    width: 100%;
 }
 
 .workspace {
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
     gap: 14px;
+    min-width: 0;
 }
 
 .app-header {
@@ -53,7 +87,8 @@ body {
     align-items: flex-start;
     justify-content: space-between;
     gap: 24px;
-    margin-bottom: 22px;
+    flex: none;
+    margin-bottom: 4px;
 }
 
 .eyebrow,
@@ -80,7 +115,22 @@ h1 {
     overflow: hidden;
 }
 
+/* Collapsed, this is one line of words and takes one line of width: parked at
+   the right-hand end of a wide header, a 520px frame around a 120px label is
+   mostly empty box. Opened, it goes back to the measure the paragraphs want.
+   <details> carries [open], so the page knows which of the two it is on its own. */
+.instructions-panel:not([open]) {
+    width: auto;
+}
+
+/* A flex row rather than the float this marker used to sit on: the header now
+   sizes this box to its words when collapsed, and a floated marker is a thing to
+   guess at in a shrink-to-fit box. Same result either way — label at one end,
+   marker at the other — by the same means the panel's own section headers use. */
 .instructions-panel>summary {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
     list-style: none;
     cursor: pointer;
     padding: 10px 14px;
@@ -95,7 +145,9 @@ h1 {
 
 .instructions-panel>summary::after {
     content: "+";
-    float: right;
+    /* Was a float; in the flex row above it is an item, and this is what still
+       holds it at the right end of the opened panel. */
+    margin-left: auto;
     color: var(--accent);
     font-size: 1.1rem;
 }
@@ -117,10 +169,15 @@ h1 {
 }
 
 #status {
-    width: min(100%, 1440px);
+    /* Full width with the canvases below it: the bar reports on the whole board,
+       and stopping short of them at the right would read as a second, narrower
+       page. Its messages are one line long at any width, so nothing stretches
+       into an unreadable measure. */
+    width: 100%;
     min-height: 38px;
     display: flex;
     align-items: center;
+    flex: none;
     margin-bottom: 12px;
     padding: 9px 13px;
     border-left: 3px solid var(--warm);
@@ -129,21 +186,105 @@ h1 {
     font-size: 0.84rem;
 }
 
-#controls {
-    display: grid;
-    grid-template-columns: minmax(250px, 1.2fr) minmax(210px, 0.9fr) minmax(260px, 1fr);
-    flex: 0 0 100%;
-    gap: 1px;
+/* The control panel. It used to be a band across the top of the page, which put
+   every setting one scroll above whatever was being looked at. It is now a
+   column that travels with the canvases: docked beside them while there is room
+   for both, and a drawer over them when there is not — the widths further down
+   pick which. panel-layout.ts supplies the other half, the is-closed class, and
+   keeps the buttons that set it in step with what is actually showing. */
+.controls-shell {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
     border: 1px solid var(--line);
+    background: var(--panel);
+}
+
+/* The bar is the only part that survives a collapse, which is why the button
+   lives here rather than at the bottom of the list. */
+.controls-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex: none;
+    padding: 9px 11px;
+    border-bottom: 1px solid var(--line);
+    background: #fbfcfc;
+}
+
+.controls-bar-title {
+    font-family: "DM Mono", monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.68rem;
+    color: var(--accent);
+}
+
+.panel-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 30px;
+    padding: 4px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--muted);
+    font: 600 0.74rem "Space Grotesk", sans-serif;
+    cursor: pointer;
+}
+
+.panel-toggle:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.panel-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.panel-toggle-icon {
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
+/* Its own scroll, so a long list of switches never lengthens the page the canvas
+   has to share; contain so a flick that reaches the end does not hand the scroll
+   on to the page behind a drawer. */
+.controls-scroll {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* Panel white, because the list below stops at its own length: on a tall
+       window there is spare column left under the last section, and the divide
+       colour showing through there would read as an empty section. */
+    background: var(--panel);
+}
+
+#controls {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    /* 1px of gaps on the line colour is how the sections were divided in the old
+       band, and still is: the groups are opaque panels laid on it. */
+    gap: 1px;
     background: var(--line);
 }
 
+/* Each section opens and closes on its own now that they are stacked in one
+   narrow column instead of spread in three wide ones: the two you are not using
+   cost nothing to fold away. <details> gives the open/close and the keyboard. */
 .control-group {
     display: flex;
+    flex: none;
     flex-direction: column;
-    gap: 11px;
     min-width: 0;
-    padding: 17px;
     background: var(--panel);
 }
 
@@ -151,7 +292,38 @@ h1 {
     display: flex;
     align-items: baseline;
     gap: 9px;
-    margin-bottom: 2px;
+    list-style: none;
+    cursor: pointer;
+    padding: 13px 15px;
+}
+
+.group-heading::-webkit-details-marker {
+    display: none;
+}
+
+.group-heading::after {
+    content: "+";
+    margin-left: auto;
+    color: var(--accent);
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.control-group[open]>.group-heading::after {
+    content: "−";
+}
+
+.group-heading:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.group-body {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    min-width: 0;
+    padding: 0 15px 15px;
 }
 
 .group-kicker {
@@ -164,19 +336,22 @@ h1 {
     font-weight: 600;
 }
 
+/* Label above the control, not beside it: in a column this narrow, a control
+   given 58% of the width truncates the longest scenario and problem names, and
+   the name of a setting you cannot read is not much of a label. */
 .control-field,
 .parameter-field {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 5px;
     color: var(--muted);
     font-size: 0.82rem;
 }
 
 .control-field select,
 .parameter-field input {
-    width: 58%;
+    width: 100%;
 }
 
 #controls select,
@@ -198,10 +373,6 @@ h1 {
     outline-offset: 2px;
 }
 
-.parameter-field {
-    align-items: flex-start;
-}
-
 .parameter-heading {
     display: flex;
     flex-direction: column;
@@ -218,7 +389,6 @@ h1 {
     color: var(--muted);
     font-size: 0.72rem;
     line-height: 1.25;
-    max-width: 180px;
 }
 
 .toggle-field {
@@ -441,9 +611,23 @@ h1 {
     color: var(--danger);
 }
 
+/* One region for the two canvases, so the panel has a single thing to share the
+   row with and the canvases can split what is left between themselves. */
+.canvas-area {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+}
+
 .canvas-frame {
-    /* Shares the open row 4:2 with .space-frame.is-open. */
+    /* Shares the open row 4:2 with .space-frame.is-open. A column of its own
+       because the svg below is what stretches: the caption is a fixed strip and
+       the drawing gets the rest. */
+    display: flex;
     flex: 4 1 0;
+    flex-direction: column;
     min-width: 0;
     border: 1px solid var(--line);
     background: var(--panel);
@@ -455,6 +639,7 @@ h1 {
     justify-content: space-between;
     align-items: center;
     gap: 12px;
+    flex: none;
     padding: 2px 4px 10px;
     color: var(--muted);
     font-size: 0.72rem;
@@ -495,7 +680,14 @@ h1 {
 svg {
     display: block;
     width: 100%;
-    height: clamp(420px, 72vh, 960px);
+    /* Takes what its frame has left after the caption rather than asking for a
+       share of the viewport: with the panel beside it, 72vh of height sat below
+       a band of controls and pushed that band off screen. The floor is what the
+       page will scroll for — a canvas shorter than this cannot be edited, while
+       a page that scrolls costs nothing but a scroll. */
+    flex: 1 1 0;
+    height: auto;
+    min-height: 340px;
     background: white;
     border: 1px solid #edf1f0;
     cursor: grab;
@@ -697,9 +889,10 @@ svg:active {
 
 .space-body {
     display: flex;
-    flex: 1;
+    flex: 1 1 0;
     flex-direction: column;
     gap: 12px;
+    min-height: 0;
 }
 
 .space-toolbar {
@@ -707,6 +900,7 @@ svg:active {
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
+    flex: none;
     padding: 2px 4px 10px;
 }
 
@@ -731,10 +925,10 @@ svg:active {
     gap: 3px;
 }
 
+/* A shorter floor than the board's: this one shares its frame with the readout
+   below it, and both have to fit the same row. */
 #spaceSvg {
-    flex: 1;
-    height: auto;
-    min-height: 320px;
+    min-height: 290px;
     background: #fbfcfc;
 }
 
@@ -827,22 +1021,172 @@ svg:active {
     pointer-events: none;
 }
 
-@media (min-width: 981px) {
+/* Floating openers for the drawer shape. Both are only ever reachable below the
+   docked width: the panel that has a column of its own does not need a pill
+   floating over the canvas to reach it. */
+.controls-fab {
+    position: fixed;
+    z-index: 20;
+    right: calc(16px + env(safe-area-inset-right));
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    display: none;
+    align-items: center;
+    min-height: 44px;
+    padding: 10px 20px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--ink);
+    font: 600 0.84rem "Space Grotesk", sans-serif;
+    box-shadow: 0 4px 14px rgba(23, 33, 43, 0.18);
+    cursor: pointer;
+}
+
+.controls-fab:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* Catches presses meant for outside the drawer, for the same reason the layout
+   picker has its own backdrop: a tap that only meant to dismiss the panel would
+   otherwise land on the canvas, where a background tap edits the graph. */
+.controls-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    background: rgba(23, 33, 43, 0.3);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 160ms ease, visibility 160ms;
+}
+
+.controls-backdrop.is-visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Docked: the panel shares the row with the canvases, scrolls in its own column
+   and collapses to a rail. Nothing about it is transient — the settings stay on
+   screen for as long as the canvas does, which is the whole point. */
+@media (min-width: 1100px) {
     .workspace {
         flex-direction: row;
-        flex-wrap: wrap;
         align-items: stretch;
+    }
+
+    .controls-shell {
+        flex: 0 0 var(--panel-width);
+    }
+
+    .controls-shell.is-closed {
+        flex-basis: var(--panel-rail-width);
+    }
+
+    /* Collapsed: the list leaves and the bar becomes the rail. The button is
+       turned sideways and takes the rail's whole height, so the thing you press
+       is the rail itself rather than a chip in its corner.
+       Deliberately not animated: the canvas is measured on every step of a width
+       transition, and a drawing whose vertices are scaled to follow the canvas
+       would be stretched sideways thirty times over one click. */
+    .controls-shell.is-closed .controls-scroll {
+        display: none;
+    }
+
+    .controls-shell.is-closed .controls-bar {
+        flex: 1 1 auto;
+        flex-direction: column;
+        justify-content: flex-start;
+        gap: 12px;
+        padding: 10px 0;
+        border-bottom: none;
+    }
+
+    /* The button carries the word instead, so the rail is not labelled twice. */
+    .controls-shell.is-closed .controls-bar-title {
+        display: none;
+    }
+
+    .controls-shell.is-closed .panel-toggle {
+        writing-mode: vertical-rl;
+        flex: 1 1 auto;
+        justify-content: center;
+        gap: 12px;
+        width: 100%;
+        min-height: 0;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+    }
+
+    .controls-shell.is-closed .panel-toggle:hover {
+        background: var(--accent-soft);
+    }
+
+    .controls-shell.is-closed .panel-toggle-icon {
+        /* Keeps pointing left and right instead of up and down. */
+        writing-mode: horizontal-tb;
     }
 }
 
+/* The two canvases split their region side by side once there is width for two
+   drawings to be read at once; below it they stack. Unrelated to the panel's own
+   threshold, so the two numbers are not the same one. */
+@media (min-width: 981px) {
+    .canvas-area {
+        flex-direction: row;
+    }
+}
+
+/* Stacked, the 4:2 split of a row would measure the board against the
+   configuration graph by height, where what decides usability is each drawing's
+   own floor. So: each keeps its minimum, and the spare below them is shared 2:1
+   because a board you edit wants the extra height a graph you read does not. */
 @media (max-width: 980px) {
-    .space-body {
-        flex: none;
+    .canvas-frame {
+        flex: 2 1 auto;
     }
 
-    #spaceSvg {
-        flex: none;
-        height: clamp(320px, 48vh, 520px);
+    .space-frame.is-open {
+        flex: 1 1 auto;
+    }
+}
+
+/* Drawer: below the docked width the panel would leave too little canvas to
+   edit in, so it stops sharing the row and covers the canvas instead — opened
+   when a setting is wanted, dismissed when the drawing is.
+   It floats over a canvas that keeps its exact size rather than squeezing the
+   row, so opening it re-measures nothing and moves nothing the reader was
+   looking at. */
+@media (max-width: 1099.98px) {
+    body {
+        /* Clears the floating Controls pill, so whatever sits in the bottom right
+           of the canvas can be scrolled up out from under it. */
+        padding-bottom: 66px;
+    }
+
+    .controls-shell {
+        position: fixed;
+        z-index: 30;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: min(360px, 88vw);
+        border-left: none;
+        box-shadow: 0 0 34px rgba(23, 33, 43, 0.22);
+        transform: translateX(0);
+        transition: transform 190ms ease, visibility 190ms;
+    }
+
+    /* visibility, not only the transform: a drawer parked off screen by a
+       transform is still in the tab order, and every control in it would be
+       reachable as an invisible stop. */
+    .controls-shell.is-closed {
+        visibility: hidden;
+        transform: translateX(-100%);
+    }
+
+    .controls-fab {
+        display: inline-flex;
     }
 
     .app-header {
@@ -852,36 +1196,52 @@ svg:active {
     .instructions-panel {
         width: 100%;
     }
+}
 
-    #controls {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .selection-group {
-        grid-column: span 2;
-    }
+.controls-fab[hidden] {
+    display: none;
 }
 
 @media (max-width: 620px) {
     body {
-        padding: 18px 10px 28px;
+        padding: 18px 10px 70px;
     }
 
     h1 {
         font-size: 1.7rem;
     }
 
-    #controls {
-        display: flex;
-        flex-direction: column;
+    /* A phone opens the panel from the bottom rather than the side: sideways, the
+       drawer would cover the board it belongs to. As a sheet, the graph stays in
+       sight and the effect of a switch can be seen as it is thrown. */
+    .controls-shell {
+        top: auto;
+        right: 0;
+        width: auto;
+        max-height: 78dvh;
+        border-left: 1px solid var(--line);
+        border-bottom: none;
+        border-radius: 12px 12px 0 0;
+        transform: translateY(0);
+        /* Only the sheet clips, so the bar's own background cannot square off its
+           rounded top. Clipping is free here and not free docked: a transformed
+           element is already the containing block fixed descendants measure
+           against, and the transform this shape carries means the layout menu's
+           dismiss backdrop is sized by this box either way. Docked, with no
+           transform, that backdrop keeps spanning the viewport as it always has. */
+        overflow: hidden;
     }
 
-    .control-group {
-        padding: 14px;
+    .controls-shell.is-closed {
+        transform: translateY(100%);
     }
 
-    .selection-group {
-        grid-column: auto;
+    .group-heading {
+        padding: 12px 13px;
+    }
+
+    .group-body {
+        padding: 0 13px 13px;
     }
 
     .canvas-caption {

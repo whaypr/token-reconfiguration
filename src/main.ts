@@ -1,5 +1,6 @@
 import { createTokenReconfigurationApp } from "./core";
 import { createReconfigurationPanel } from "./reconfiguration-panel";
+import { createPanelLayout } from "./panel-layout";
 import { LAYOUT_OPTIONS } from "./layouts";
 import { problems } from "./problems";
 import { scenarios } from "./scenarios";
@@ -58,6 +59,18 @@ function bootstrap(): void {
         setStatus: message => {
             currentApp?.setStatus(message);
         },
+    });
+
+    // Where the panel itself sits: beside the canvases while there is room, a
+    // drawer over them when there is not, and collapsed or unfolded as the reader
+    // left it. Nothing below changes — this file keeps owning every control's
+    // value, and the panel only decides whether they are on screen.
+    createPanelLayout({
+        shellSelector: "#controlsShell",
+        toggleSelector: "#panelToggle",
+        fabSelector: "#controlsFab",
+        backdropSelector: "#controlsBackdrop",
+        groupSelector: "#controls details.control-group",
     });
 
     // Only the words here. The number box — its bounds, step and value — is the
@@ -127,6 +140,16 @@ function bootstrap(): void {
     // which matters because a background click there edits the graph.
     layoutPickerBackdrop.addEventListener("click", () => {
         layoutPicker.removeAttribute("open");
+    });
+
+    // The menu floats inside the panel's own scroll box now that the panel is a
+    // column, so opening it near the bottom of a short panel — a phone sheet, a
+    // low window — would leave its last layouts below the edge of that box.
+    // "nearest" so a menu that is already fully in view does not move anything.
+    layoutPicker.addEventListener("toggle", () => {
+        if (layoutPicker.open) {
+            layoutOptions.scrollIntoView({ block: "nearest" });
+        }
     });
 
     function renderScenarioOptions(): void {

@@ -51,6 +51,12 @@
                     Ctrl+Z to undo up to 5 previous actions.
                 </p>
                 <p>
+                    <strong>Controls:</strong> the panel sits beside the canvases and each of its three sections opens
+                    and closes on its own. Press <strong>H</strong>, or the button in its corner, to hide the panel and
+                    take back the width; it comes back where you left it next time. On a narrow screen the same panel
+                    slides over the canvas as a drawer instead, opened and closed by the floating Controls button.
+                </p>
+                <p>
                     <strong>Touch &mdash; Tokens mode:</strong>
                     <br>
                     Drag with one finger to pan, pinch with two to zoom.
@@ -81,136 +87,175 @@
     <div id="status"></div>
 
     <main class="workspace">
-        <div id="controls">
-            <section class="control-group problem-group">
-                <div class="group-heading">
-                    <span class="group-kicker">Model</span>
-                    <span class="group-title">Problem setup</span>
-                </div>
-                <label class="control-field">
-                    <span>Problem</span>
-                    <select id="problemSelect"></select>
-                </label>
-                <label class="parameter-field">
-                    <span class="parameter-heading"><strong id="parameterLabel"></strong><span
-                            id="parameterDescription"></span></span>
-                    <input type="number" id="parameterValue" value="2" min="0" max="10">
-                </label>
-                <label class="control-field">
-                    <span>Scenario</span>
-                    <select id="scenarioSelect"></select>
-                </label>
-            </section>
+        <aside class="controls-shell" id="controlsShell">
+            <div class="controls-bar">
+                <span class="controls-bar-title">Controls</span>
+                <!-- One control for both shapes of the panel: it docks beside the
+                   canvases when there is room and becomes a drawer over them when
+                   there is not, so this button means "give the canvas the width
+                   back" either way. Its label is written by panel-layout.ts. -->
+                <button type="button" class="panel-toggle" id="panelToggle" aria-expanded="true"
+                    aria-controls="controls">
+                    <span class="panel-toggle-icon" aria-hidden="true">&#171;</span>
+                    <span class="panel-toggle-label">Hide</span>
+                </button>
+            </div>
+            <div class="controls-scroll">
+                <div id="controls">
+                    <details class="control-group" data-group="problem" open>
+                        <summary class="group-heading">
+                            <span class="group-kicker">Model</span>
+                            <span class="group-title">Problem setup</span>
+                        </summary>
+                        <div class="group-body">
+                            <label class="control-field">
+                                <span>Problem</span>
+                                <select id="problemSelect"></select>
+                            </label>
+                            <label class="parameter-field">
+                                <span class="parameter-heading"><strong id="parameterLabel"></strong><span
+                                        id="parameterDescription"></span></span>
+                                <input type="number" id="parameterValue" value="2" min="0" max="10">
+                            </label>
+                            <label class="control-field">
+                                <span>Scenario</span>
+                                <select id="scenarioSelect"></select>
+                            </label>
+                        </div>
+                    </details>
 
-            <section class="control-group view-group">
-                <div class="group-heading">
-                    <span class="group-kicker">Canvas</span>
-                    <span class="group-title">View</span>
-                </div>
-                <details class="layout-picker" id="layoutPicker">
-                    <summary>Apply layout</summary>
-                    <div class="layout-picker-backdrop" id="layoutPickerBackdrop"></div>
-                    <div class="layout-options" id="layoutOptions"></div>
-                </details>
-                <label class="toggle-field">
-                    <input type="checkbox" id="repulsionToggle">
-                    <span>Repulsive force</span>
-                </label>
-                <div class="toggle-row">
-                    <label class="toggle-field">
-                        <input type="checkbox" id="neighborhoodCountToggle">
-                        <span>Token numbers</span>
-                    </label>
-                    <label class="toggle-field">
-                        <input type="checkbox" id="moveDirectionToggle">
-                        <span>Token moves</span>
-                    </label>
-                </div>
-                <label class="toggle-field">
-                    <input type="checkbox" id="spaceGraphToggle">
-                    <span>Configuration graph</span>
-                </label>
-                <div class="toggle-group" role="group" aria-label="Vertex colors">
-                    <span class="toggle-group-label">Vertex colors</span>
-                    <div class="toggle-column">
-                        <label class="toggle-field">
-                            <input type="checkbox" id="colorMovableToggle">
-                            <span>Movable tokens</span>
-                            <span class="color-swatch swatch-movable" aria-hidden="true"></span>
-                        </label>
-                        <label class="toggle-field">
-                            <input type="checkbox" id="colorFrozenToggle">
-                            <span>Frozen tokens</span>
-                            <span class="color-swatch swatch-frozen" aria-hidden="true"></span>
-                        </label>
-                        <label class="toggle-field">
-                            <input type="checkbox" id="colorPlaceableToggle">
-                            <span>Placeable vertices</span>
-                            <span class="color-swatch swatch-placeable" aria-hidden="true"></span>
-                        </label>
-                    </div>
-                </div>
-            </section>
+                    <details class="control-group" data-group="view" open>
+                        <summary class="group-heading">
+                            <span class="group-kicker">Canvas</span>
+                            <span class="group-title">View</span>
+                        </summary>
+                        <div class="group-body">
+                            <details class="layout-picker" id="layoutPicker">
+                                <summary>Apply layout</summary>
+                                <div class="layout-picker-backdrop" id="layoutPickerBackdrop"></div>
+                                <div class="layout-options" id="layoutOptions"></div>
+                            </details>
+                            <label class="toggle-field">
+                                <input type="checkbox" id="repulsionToggle">
+                                <span>Repulsive force</span>
+                            </label>
+                            <div class="toggle-row">
+                                <label class="toggle-field">
+                                    <input type="checkbox" id="neighborhoodCountToggle">
+                                    <span>Token numbers</span>
+                                </label>
+                                <label class="toggle-field">
+                                    <input type="checkbox" id="moveDirectionToggle">
+                                    <span>Token moves</span>
+                                </label>
+                            </div>
+                            <label class="toggle-field">
+                                <input type="checkbox" id="spaceGraphToggle">
+                                <span>Configuration graph</span>
+                            </label>
+                            <div class="toggle-group" role="group" aria-label="Vertex colors">
+                                <span class="toggle-group-label">Vertex colors</span>
+                                <div class="toggle-column">
+                                    <label class="toggle-field">
+                                        <input type="checkbox" id="colorMovableToggle">
+                                        <span>Movable tokens</span>
+                                        <span class="color-swatch swatch-movable" aria-hidden="true"></span>
+                                    </label>
+                                    <label class="toggle-field">
+                                        <input type="checkbox" id="colorFrozenToggle">
+                                        <span>Frozen tokens</span>
+                                        <span class="color-swatch swatch-frozen" aria-hidden="true"></span>
+                                    </label>
+                                    <label class="toggle-field">
+                                        <input type="checkbox" id="colorPlaceableToggle">
+                                        <span>Placeable vertices</span>
+                                        <span class="color-swatch swatch-placeable" aria-hidden="true"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </details>
 
-            <section class="control-group selection-group">
-                <div class="group-heading">
-                    <span class="group-kicker">Edit</span>
-                    <span class="group-title">Selection</span>
+                    <details class="control-group" data-group="selection" open>
+                        <summary class="group-heading">
+                            <span class="group-kicker">Edit</span>
+                            <span class="group-title">Selection</span>
+                        </summary>
+                        <div class="group-body">
+                            <div class="selection-actions">
+                                <button type="button" id="clearSelectionButton">Clear</button>
+                                <button type="button" id="deleteSelectionButton" class="danger-action">Delete</button>
+                                <button type="button" id="copySelectionButton">Copy</button>
+                                <button type="button" id="saveSelectionButton">Save</button>
+                                <button type="button" id="pasteSelectionButton">Paste</button>
+                                <button type="button" id="importSelectionButton">Load</button>
+                            </div>
+                        </div>
+                    </details>
                 </div>
-                <div class="selection-actions">
-                    <button type="button" id="clearSelectionButton">Clear</button>
-                    <button type="button" id="deleteSelectionButton" class="danger-action">Delete</button>
-                    <button type="button" id="copySelectionButton">Copy</button>
-                    <button type="button" id="saveSelectionButton">Save</button>
-                    <button type="button" id="pasteSelectionButton">Paste</button>
-                    <button type="button" id="importSelectionButton">Load</button>
-                </div>
-            </section>
-        </div>
+            </div>
+        </aside>
 
-        <div class="canvas-frame">
-            <div class="canvas-caption">
-                <div class="canvas-caption-controls">
-                    <div class="touchscreen-options">
-                        <span class="touchscreen-label">Touchscreen options</span>
-                        <div class="mode-toggle" role="group" aria-label="Interaction mode">
-                            <button type="button" id="modeTokensButton" class="mode-button active" aria-pressed="true">Tokens</button>
-                            <button type="button" id="modeGraphButton" class="mode-button" aria-pressed="false">Graph</button>
+        <!-- The two canvases are one region: they split the space left of the
+             panel between them, side by side when it is wide and stacked when it
+             is not. -->
+        <div class="canvas-area">
+            <div class="canvas-frame">
+                <div class="canvas-caption">
+                    <div class="canvas-caption-controls">
+                        <div class="touchscreen-options">
+                            <span class="touchscreen-label">Touchscreen options</span>
+                            <div class="mode-toggle" role="group" aria-label="Interaction mode">
+                                <button type="button" id="modeTokensButton" class="mode-button active"
+                                    aria-pressed="true">Tokens</button>
+                                <button type="button" id="modeGraphButton" class="mode-button"
+                                    aria-pressed="false">Graph</button>
+                            </div>
                         </div>
                     </div>
+                    <div class="canvas-caption-text"><span></span><span>View and edit the graph, move tokens around</span>
+                    </div>
                 </div>
-                <div class="canvas-caption-text"><span></span><span>View and edit the graph, move tokens around</span></div>
+                <svg></svg>
             </div>
-            <svg></svg>
-        </div>
 
-        <div class="space-frame" id="spaceFrame">
-            <div class="canvas-caption">
-                <div class="canvas-caption-text">
-                    <span>Configuration graph</span>
-                    <span id="spaceDescription">One dot for every configuration the rules allow, one line for every
-                        single move between them. The middle dot is where the board started; a ring is one move
-                        further out.</span>
+            <div class="space-frame" id="spaceFrame">
+                <div class="canvas-caption">
+                    <div class="canvas-caption-text">
+                        <span>Configuration graph</span>
+                        <span id="spaceDescription">One dot for every configuration the rules allow, one line for every
+                            single move between them. The middle dot is where the board started; a ring is one move
+                            further out.</span>
+                    </div>
                 </div>
-            </div>
-            <div class="space-toolbar">
-                <div class="mode-toggle" id="spaceDiagramTabs" role="tablist" aria-label="Configuration representation">
-                    <button type="button" class="mode-button active" data-view="rings" role="tab" id="spaceRingsTab"
-                        aria-selected="true" aria-controls="spaceBody">Rings</button>
-                    <button type="button" class="mode-button" data-view="tree" role="tab" id="spaceTreeTab"
-                        aria-selected="false" aria-controls="spaceBody" tabindex="-1">Tree</button>
+                <div class="space-toolbar">
+                    <div class="mode-toggle" id="spaceDiagramTabs" role="tablist"
+                        aria-label="Configuration representation">
+                        <button type="button" class="mode-button active" data-view="rings" role="tab" id="spaceRingsTab"
+                            aria-selected="true" aria-controls="spaceBody">Rings</button>
+                        <button type="button" class="mode-button" data-view="tree" role="tab" id="spaceTreeTab"
+                            aria-selected="false" aria-controls="spaceBody" tabindex="-1">Tree</button>
+                    </div>
+                    <button type="button" class="mode-button space-complete-toggle" id="spaceCompleteGraph"
+                        aria-pressed="false" aria-label="Configuration graph with cross-links"
+                        title="Show every discovered legal edge, including cross-links; press again to show only the tree."
+                        hidden>with cross-links</button>
                 </div>
-                <button type="button" class="mode-button space-complete-toggle" id="spaceCompleteGraph"
-                    aria-pressed="false" aria-label="Configuration graph with cross-links"
-                    title="Show every discovered legal edge, including cross-links; press again to show only the tree."
-                    hidden>with cross-links</button>
-            </div>
-            <div class="space-body" id="spaceBody" role="tabpanel" aria-live="off">
-                <svg id="spaceSvg" aria-label="Token configuration graph"></svg>
-                <div class="space-readout" id="spaceReadout"></div>
+                <div class="space-body" id="spaceBody" role="tabpanel" aria-live="off">
+                    <svg id="spaceSvg" aria-label="Token configuration graph"></svg>
+                    <div class="space-readout" id="spaceReadout"></div>
+                </div>
             </div>
         </div>
     </main>
+
+    <!-- Opens the panel where the panel is a drawer: below the docked width there
+         is no column left of the canvas to put a Controls button in, and this is
+         the one control that has to stay reachable while the canvas fills the
+         screen. -->
+    <button type="button" class="controls-fab" id="controlsFab" aria-controls="controlsShell"
+        aria-expanded="false">Controls</button>
+    <div class="controls-backdrop" id="controlsBackdrop"></div>
 
     <input id="selectionImportInput" type="file" accept="application/json" hidden>
 
