@@ -1,10 +1,9 @@
 import d3is_reconfigure from "./scenarios/d3is_reconfigure.json";
-import small_component from "./scenarios/small_component.json";
 import _2lp_reconfigure from "./scenarios/2lp_reconfigure.json";
 import _2lp_blockAccess from "./scenarios/2lp_blockAccess.json";
 import type { Scenario } from "./types";
 
-// The two drawn scenarios live as JSON rather than as TypeScript literals: they
+// The bundled scenarios live as JSON rather than as TypeScript literals: they
 // are the very files the Selection panel's Save writes, so one can be exported
 // from a running app, tweaked, and dropped back in here unchanged. The `version`
 // each carries is that format's own field and is simply left behind here; every
@@ -30,12 +29,6 @@ const drawnScenarios: Scenario[] = [
         id: "2lp_blockAccess",
         name: "2-Limited Packing | Block access",
         description: "Goal: Prevent the yellow tokens from reaching the vertices marked with a blue square. You are not allowed to delete anything in the given graph.",
-    },
-    {
-        ...small_component,
-        id: "small_component",
-        name: "Small example | Six configurations",
-        description: "Goal: Move the two yellow tokens onto the blue squares. The Configuration graph shows every legal configuration of this small board.",
     },
 ];
 

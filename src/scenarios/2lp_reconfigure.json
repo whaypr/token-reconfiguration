@@ -342,8 +342,8 @@
     }
   ],
   "problem": {
-    "id": "p-limited-packing",
-    "name": "p-Limited Packing",
+    "id": "k-limited-packing",
+    "name": "k-Limited Packing",
     "parameter": 2
   }
 }
