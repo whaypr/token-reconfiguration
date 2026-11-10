@@ -1086,8 +1086,9 @@ svg:active {
        turned sideways and takes the rail's whole height, so the thing you press
        is the rail itself rather than a chip in its corner.
        Deliberately not animated: the canvas is measured on every step of a width
-       transition, and a drawing whose vertices are scaled to follow the canvas
-       would be stretched sideways thirty times over one click. */
+       transition, and the view follows each of those steps, so an animated rail
+       would have the drawing slide sideways across the pane thirty times over one
+       click instead of simply gaining room. */
     .controls-shell.is-closed .controls-scroll {
         display: none;
     }

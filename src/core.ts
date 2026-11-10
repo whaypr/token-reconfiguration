@@ -1538,71 +1538,52 @@ export function createTokenReconfigurationApp({
         if (rect.width < 60 || rect.height < 60) {
             return;
         }
-        // A real size change (phone shows ~370x500, desktop ~1200x800) has to
-        // move the graph with it, or every vertex keeps the coordinates of the
-        // canvas it was arranged in and sits outside the visible one, where
-        // taps land on empty space. It is scaled rather than laid out again:
-        // a layout is one-time now, and what needs fitting may just as well be
-        // a hand-dragged or force-simulated Configuration. Only after the first
-        // measurement — before it there is no shape to scale, and vertices
-        // would be multiplied out of the origin they were seeded at.
+
         const previousWidth = width;
         const previousHeight = height;
         const sizeChanged = Math.abs(rect.width - width) > 1 || Math.abs(rect.height - height) > 1;
-        const scaleX = sizeChanged && width > 0 ? rect.width / width : 1;
-        const scaleY = sizeChanged && height > 0 ? rect.height / height : 1;
         width = rect.width;
         height = rect.height;
         svg.attr("width", width).attr("height", height);
         background.attr("width", width).attr("height", height);
 
-        if (shipsOwnPositions) {
-            // The same job as scaling the rest, done without moving one
-            // coordinate. A drawing that said where its vertices go keeps those
-            // numbers for good, so it is the window that travels instead.
-            if (previousWidth <= 0 || previousHeight <= 0) {
-                // Nothing has been framed yet — this is either the first
-                // measurement or the first one that had a window worth
-                // measuring. The drawing is typically wider than a phone, so
-                // this is what brings it into view at all.
-                setCanvasView(fitGraphToCanvas(graphNodes, width, height));
-            } else if (sizeChanged) {
-                // Recentering alone is not enough when a side-by-side panel takes
-                // half the width: the middle stays put, but the ends of a drawn
-                // path are clipped. Fit the SAME coordinates at both sizes, then
-                // carry the user's pan/zoom relative to the old fit over to the
-                // new one. A visitor who has not touched the view gets a complete
-                // drawing again; one who has keeps their own offset and zoom.
-                const previousFit = fitGraphToCanvas(graphNodes, previousWidth, previousHeight);
-                const nextFit = fitGraphToCanvas(graphNodes, width, height);
-                const fitRatio = nextFit.k / previousFit.k;
-                const [minScale, maxScale] = ZOOM_SCALE_RANGE;
-                const scale = Math.max(minScale, Math.min(maxScale, currentTransform.k * fitRatio));
-                const x = nextFit.x + (currentTransform.x - previousFit.x) * fitRatio;
-                const y = nextFit.y + (currentTransform.y - previousFit.y) * fitRatio;
-
-                setCanvasView(d3.zoomIdentity.translate(x, y).scale(scale));
-            }
+        if (!sizeChanged) {
             return;
         }
 
-        if (scaleX !== 1 || scaleY !== 1) {
-            graphNodes.forEach(node => {
-                node.x *= scaleX;
-                node.y *= scaleY;
-                node.anchorX *= scaleX;
-                node.anchorY *= scaleY;
-                // The pin travels with the vertex: leaving it behind would let
-                // the simulation drag it back to the old canvas size.
-                if (node.fx !== undefined) {
-                    node.fx *= scaleX;
-                }
-                if (node.fy !== undefined) {
-                    node.fy *= scaleY;
-                }
-            });
+        if (previousWidth <= 0 || previousHeight <= 0) {
+            // Nothing has been framed yet — this is either the first measurement
+            // or the first one that had a window worth measuring. A drawing that
+            // said where its vertices go is typically wider than a phone, so this
+            // is what brings it into view at all; one that names only its
+            // vertices is laid out against the size just measured a few lines
+            // below, where the opening layout is computed.
+            if (shipsOwnPositions) {
+                setCanvasView(fitGraphToCanvas(graphNodes, width, height));
+            }
+
+            return;
         }
-        syncSimulation();
+
+        // The pane changed shape under the drawing — hiding the docked panel is
+        // the everyday case, a rotated phone the extreme one. The graph keeps the
+        // size it had. Scaling it to the new box instead, which is what happened
+        // here, reached the vertices themselves: a pane that only grew wider
+        // stretched every arrangement sideways out of proportion, and one that
+        // narrowed shrank a hand-placed or simulated Configuration down for no
+        // reason the user asked for. Positions are the graph's own — the numbers a
+        // file carries and a layout was chosen for — and a window changing size is
+        // no reason to rewrite them.
+        //
+        // What a resized canvas does on its own is move its edges, so the view
+        // slides by half the change in each direction: whatever was in the middle
+        // of the pane is still in the middle of it, at exactly the scale it was
+        // drawn at. A drawing that no longer fits the narrower pane is one wheel
+        // turn or a pan away, which is the same answer as anywhere else the view
+        // is too tight.
+        setCanvasView(d3.zoomIdentity
+            .translate(currentTransform.x + (width - previousWidth) / 2, currentTransform.y + (height - previousHeight) / 2)
+            .scale(currentTransform.k));
     }
 
     // Whether the opening Configuration came from the file that was loaded rather
