@@ -5,6 +5,13 @@ import { LAYOUT_OPTIONS } from "./layouts";
 import { problems } from "./problems";
 import { scenarios } from "./scenarios";
 import { DEFAULT_COLOR_HINTS } from "./types";
+import {
+    DEFAULT_GRID_SPACING,
+    GRID_SPACING_STEP,
+    MAX_GRID_SPACING,
+    MIN_GRID_SPACING,
+    clampGridSpacing,
+} from "./grid";
 import type { ColorHints, InteractionMode, TokenReconfigurationApp, ProblemDefinition, SerializedProblemContext } from "./types";
 
 function bootstrap(): void {
@@ -32,8 +39,10 @@ function bootstrap(): void {
     const selectionImportInput = document.getElementById("selectionImportInput") as HTMLInputElement;
     const spaceGraphToggle = document.getElementById("spaceGraphToggle") as HTMLInputElement;
     const spaceFrame = document.getElementById("spaceFrame") as HTMLDivElement;
+    const snapToGridToggle = document.getElementById("snapToGridToggle") as HTMLInputElement;
+    const gridSpacingInput = document.getElementById("gridSpacingInput") as HTMLInputElement;
 
-    if (!scenarioSelect || !problemSelect || !parameterLabel || !parameterDescription || !layoutPicker || !layoutPickerBackdrop || !layoutOptions || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !colorMovableToggle || !colorFrozenToggle || !colorPlaceableToggle || !modeTokensButton || !modeGraphButton || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || !spaceGraphToggle || !spaceFrame || scenarios.length === 0 || problems.length === 0) {
+    if (!scenarioSelect || !problemSelect || !parameterLabel || !parameterDescription || !layoutPicker || !layoutPickerBackdrop || !layoutOptions || !repulsionToggle || !neighborhoodCountToggle || !moveDirectionToggle || !colorMovableToggle || !colorFrozenToggle || !colorPlaceableToggle || !modeTokensButton || !modeGraphButton || !copySelectionButton || !pasteSelectionButton || !saveSelectionButton || !importSelectionButton || !clearSelectionButton || !deleteSelectionButton || !selectionImportInput || !spaceGraphToggle || !spaceFrame || !snapToGridToggle || !gridSpacingInput || scenarios.length === 0 || problems.length === 0) {
         window.setTimeout(bootstrap, 0);
         return;
     }
@@ -41,6 +50,11 @@ function bootstrap(): void {
     let currentApp: TokenReconfigurationApp | null = null;
     let currentProblem = problems[0];
     let interactionMode: InteractionMode = "tokens";
+    // The grid density, as this file last handed it to an app. Kept here because
+    // the box can be emptied or argued with, and the value it should then show is
+    // the one the canvas is actually drawing — which a rebuilt app has to be told
+    // again, since a scenario switch throws the old one away.
+    let gridSpacing = DEFAULT_GRID_SPACING;
 
     // Built once, before there is a board for it to read. Choosing a scenario
     // destroys the app and builds a new one, so the panel is handed a way to ask
@@ -108,6 +122,29 @@ function bootstrap(): void {
         currentApp.setMoveDirectionVisibility(moveDirectionToggle.checked);
         currentApp.setInteractionMode(interactionMode);
         currentApp.setColorHints(readColorHints());
+        currentApp.setSnapToGridEnabled(snapToGridToggle.checked);
+        currentApp.setGridSpacing(gridSpacing);
+    }
+
+    // The box states the bounds it is held to and the step it moves by, so the
+    // spinner can never land on a value the app would refuse, and neither number
+    // is written down twice.
+    function syncGridSpacingInput(): void {
+        gridSpacingInput.min = String(MIN_GRID_SPACING);
+        gridSpacingInput.max = String(MAX_GRID_SPACING);
+        gridSpacingInput.step = String(GRID_SPACING_STEP);
+    }
+
+    function applyGridSpacing(rawValue: number): void {
+        // An emptied box is not a request for a different grid, and a number past
+        // either bound is not one the canvas would draw: either way the value the
+        // grid is actually using goes back into the box, so the control never
+        // claims a density the pane disagrees with.
+        const spacing = Number.isFinite(rawValue) ? clampGridSpacing(rawValue) : gridSpacing;
+
+        gridSpacing = spacing;
+        gridSpacingInput.value = String(spacing);
+        currentApp?.setGridSpacing(spacing);
     }
 
     // A layout is an action, not a setting: picking one rearranges the graph
@@ -279,6 +316,18 @@ function bootstrap(): void {
         }
     });
 
+    snapToGridToggle.addEventListener("change", () => {
+        if (currentApp) {
+            currentApp.setSnapToGridEnabled(snapToGridToggle.checked);
+        }
+    });
+
+    // "change", like the parameter box: a density is typed, and the grid should
+    // not be redrawn for every digit of the way from 4 to 40.
+    gridSpacingInput.addEventListener("change", () => {
+        applyGridSpacing(gridSpacingInput.valueAsNumber);
+    });
+
     // Three switches, one value object: whichever changes, the app is handed
     // the whole set, so it can never see a half-applied group of hints.
     for (const hintToggle of [colorMovableToggle, colorFrozenToggle, colorPlaceableToggle]) {
@@ -407,6 +456,12 @@ function bootstrap(): void {
     // class rather than a form state, so a restored tick would otherwise open no
     // frame at all.
     spaceGraphToggle.checked = false;
+    // The grid starts off, for the same reason as the switches above: a browser
+    // that restores a ticked box across a reload would otherwise open a pane the
+    // reader never asked to have ruled.
+    snapToGridToggle.checked = false;
+    syncGridSpacingInput();
+    gridSpacingInput.value = String(gridSpacing);
     loadScenario(0);
 }
 

@@ -34,6 +34,9 @@ type SelectionDragMode = "move" | "rotate";
 type SelectionDragState = {
     mode: SelectionDragMode;
     selectedNodeIds: NodeId[];
+    // The vertex the cursor is holding. A group is moved rigidly, so one of them
+    // has to be the one that decides where the group goes.
+    anchorNodeId: NodeId;
     startPointer: { x: number; y: number };
     centerX: number;
     centerY: number;
@@ -46,6 +49,10 @@ export interface SelectionGesturesContext {
     getNodeById: (nodeId: NodeId) => ForceNodeDatum | null;
     getSelectedNodeIds: () => NodeId[];
     isRepulsionEnabled: () => boolean;
+    // Where a dragged point actually lands: on the nearest grid intersection while
+    // the grid is on, exactly where the pointer is while it is off. Doing nothing
+    // is the whole of the off case, so nothing below has to ask whether to snap.
+    snapPoint(x: number, y: number): [number, number];
     positionGraphElements: () => void;
     selectNodesInRectangle: (x1: number, y1: number, x2: number, y2: number) => void;
     clearNodeSelection: () => void;
@@ -78,7 +85,7 @@ export class SelectionGestureManager {
 
         if (selectedNodeIds.length > 1 && selectedNodeIds.includes(nodeData.id)) {
             const [pointerX, pointerY] = this.toGraphPoint(resolvePointerEvent(event.sourceEvent as MouseEvent | TouchEvent));
-            this.beginSelectionDrag(event.sourceEvent.shiftKey ? "rotate" : "move", pointerX, pointerY);
+            this.beginSelectionDrag(event.sourceEvent.shiftKey ? "rotate" : "move", pointerX, pointerY, nodeData.id);
             return;
         }
 
@@ -94,7 +101,11 @@ export class SelectionGestureManager {
             return;
         }
 
-        const [x, y] = this.toGraphPoint(resolvePointerEvent(event.sourceEvent as MouseEvent | TouchEvent));
+        // Snapped while it moves rather than the moment the drag starts: a vertex
+        // that was placed between two lines stays exactly there until the reader
+        // takes hold of it and drags, and only then goes to the nearest line.
+        const [pointerX, pointerY] = this.toGraphPoint(resolvePointerEvent(event.sourceEvent as MouseEvent | TouchEvent));
+        const [x, y] = this.context.snapPoint(pointerX, pointerY);
         nodeData.fx = x;
         nodeData.fy = y;
         nodeData.anchorX = x;
@@ -200,7 +211,7 @@ export class SelectionGestureManager {
             .attr("height", height);
     }
 
-    private beginSelectionDrag(mode: SelectionDragMode, pointerX: number, pointerY: number): void {
+    private beginSelectionDrag(mode: SelectionDragMode, pointerX: number, pointerY: number, anchorNodeId: NodeId): void {
         const selectedNodeIds = this.context.getSelectedNodeIds();
         const positions = this.snapshotSelectedNodePositions(selectedNodeIds);
         const center = this.computeSelectionCenter(positions);
@@ -212,6 +223,7 @@ export class SelectionGestureManager {
         this.selectionDragState = {
             mode,
             selectedNodeIds,
+            anchorNodeId,
             startPointer: { x: pointerX, y: pointerY },
             centerX: center.x,
             centerY: center.y,
@@ -236,11 +248,23 @@ export class SelectionGestureManager {
             return;
         }
 
-        const { mode, startPointer, centerX, centerY, selectedNodeIds, startPositions } = this.selectionDragState;
+        const { mode, anchorNodeId, startPointer, centerX, centerY, selectedNodeIds, startPositions } = this.selectionDragState;
 
         if (mode === "move") {
-            const dx = pointerX - startPointer.x;
-            const dy = pointerY - startPointer.y;
+            let dx = pointerX - startPointer.x;
+            let dy = pointerY - startPointer.y;
+            const anchorStart = startPositions.get(anchorNodeId);
+
+            // A group moves rigidly, so the grid is applied to the vertex under the
+            // cursor and the offset the rest of the selection carries is taken from
+            // where THAT lands. Snapping each vertex onto its own nearest
+            // intersection would fold a whole arrangement onto one or two points,
+            // which is a destruction of the drawing rather than an alignment of it.
+            if (anchorStart) {
+                const [snappedAnchorX, snappedAnchorY] = this.context.snapPoint(anchorStart.x + dx, anchorStart.y + dy);
+                dx = snappedAnchorX - anchorStart.x;
+                dy = snappedAnchorY - anchorStart.y;
+            }
 
             selectedNodeIds.forEach(nodeId => {
                 const startPosition = startPositions.get(nodeId);
@@ -260,6 +284,11 @@ export class SelectionGestureManager {
                 nodeData.fy = nextY;
             });
         } else {
+            // Rotation deliberately takes no notice of the grid. A turn through any
+            // angle but a right one puts a vertex on a line by luck rather than by
+            // aim, and pulling each turned vertex onto its nearest line would bend
+            // the shape the reader is turning. A group that has been rotated is
+            // straightened again by a drag, which the grid does govern.
             const startAngle = Math.atan2(startPointer.y - centerY, startPointer.x - centerX);
             const currentAngle = Math.atan2(pointerY - centerY, pointerX - centerX);
             const rotation = currentAngle - startAngle;

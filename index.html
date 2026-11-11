@@ -57,6 +57,14 @@
                     slides over the canvas as a drawer instead, opened and closed by the floating Controls button.
                 </p>
                 <p>
+                    <strong>Snap to grid:</strong> draws a grid across the graph and lands a dragged vertex &mdash; or
+                    one being created &mdash; on the nearest intersection. <strong>Grid step</strong> is how far apart
+                    the lines stand, in graph units. Far zoomed out the grid draws every nth line so it stays legible,
+                    while vertices still land on the step that was set. Rotating a selection turns through the grid
+                    rather than along it &mdash; pulling turned vertices onto the nearest line would bend the shape
+                    being turned.
+                </p>
+                <p>
                     <strong>Touch &mdash; Tokens mode:</strong>
                     <br>
                     Drag with one finger to pan, pinch with two to zoom.
@@ -135,6 +143,22 @@
                                 <div class="layout-picker-backdrop" id="layoutPickerBackdrop"></div>
                                 <div class="layout-options" id="layoutOptions"></div>
                             </details>
+                            <!-- One choice with a number attached to it, so the two
+                                 share a row: the switch decides whether there is a
+                                 grid at all, the box says how far apart its lines
+                                 stand. The box stays live either way, so a density
+                                 can be typed in before the grid is wanted. -->
+                            <div class="grid-snap-field">
+                                <label class="toggle-field">
+                                    <input type="checkbox" id="snapToGridToggle">
+                                    <span>Snap to grid</span>
+                                </label>
+                                <label class="grid-spacing-field">
+                                    <span>Grid step</span>
+                                    <input type="number" id="gridSpacingInput" min="10" max="400" step="5" value="30"
+                                        title="Distance between grid lines, in graph units">
+                                </label>
+                            </div>
                             <label class="toggle-field">
                                 <input type="checkbox" id="repulsionToggle">
                                 <span>Repulsive force</span>

@@ -166,6 +166,13 @@ export interface TokenReconfigurationApp {
     setRepulsionEnabled(enabled: boolean): void;
     setNeighborhoodCountVisibility(enabled: boolean): void;
     setMoveDirectionVisibility(enabled: boolean): void;
+    // Shows the snap grid and starts landing dragged and newly placed vertices on
+    // it. Off, the lines are gone and vertices go exactly where they are dropped.
+    setSnapToGridEnabled(enabled: boolean): void;
+    // Distance between neighbouring grid lines, in graph units. Refused outside
+    // the range the input offers, so a value from anywhere else still cannot ask
+    // for a grid too fine to see or too coarse to be one.
+    setGridSpacing(spacing: number): void;
     applyLayout(layout: LayoutMode): void;
     // Applies a different problem to the graph that is already open. The
     // parameter is the new problem's own value, since a number means something

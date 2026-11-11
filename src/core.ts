@@ -25,6 +25,7 @@ import type {
 import type { BoardReading, TokenMove } from "./configuration-board";
 import type { Occupancy } from "./configuration-space";
 import { createTouchGestures, TOUCH_HIT_RADIUS_PX } from "./touch-gestures";
+import { createGridOverlay } from "./grid";
 import { applyGraphLayout } from "./layouts";
 import { ZOOM_SCALE_RANGE, fitGraphToCanvas } from "./canvas-view";
 import { createGraph } from "./graph-factory";
@@ -156,6 +157,13 @@ export function createTokenReconfigurationApp({
         .attr("height", height);
 
     const graphViewport = svg.append("g").attr("class", "graph-viewport");
+    // The grid first, so it lies under everything the reader has drawn, and it
+    // takes no pointer events: a grid is something you aim at, never something
+    // you click.
+    const gridLayer = graphViewport.append("g")
+        .attr("class", "grid-layer")
+        .attr("aria-hidden", "true")
+        .style("pointer-events", "none");
     const linkLayer = graphViewport.append("g").attr("class", "link-layer");
     // Its own layer, below the vertices, because the mark is meant to sit under a
     // vertex rather than on it. Below the links as well would let a square punch a
@@ -266,6 +274,17 @@ export function createTokenReconfigurationApp({
     // hint still apply, so an uncoloured graph stays exactly as legal.
     let colorHints: ColorHints = { ...DEFAULT_COLOR_HINTS };
 
+    // Whether the grid shows, and how far apart its lines are, live inside the
+    // overlay and nowhere else: the same two values decide what is drawn and
+    // where a released vertex lands, so keeping them in one owner is what stops
+    // the grid on screen disagreeing with the grid the vertices snap to. The
+    // controls in main.ts remain the thing that sets them.
+    const gridOverlay = createGridOverlay({
+        layer: gridLayer,
+        currentTransform: () => currentTransform,
+        canvasSize: () => ({ width, height }),
+    });
+
     const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
         .scaleExtent(ZOOM_SCALE_RANGE)
         .filter((event: MouseEvent | WheelEvent | TouchEvent) => {
@@ -290,6 +309,10 @@ export function createTokenReconfigurationApp({
         .on("zoom", (event: D3ZoomEvent<SVGSVGElement, unknown>) => {
             currentTransform = event.transform;
             graphViewport.attr("transform", currentTransform.toString());
+            // The grid is drawn only across what the reader can see, so a pan or
+            // a wheel turn changes which lines exist — the viewport transform
+            // alone would slide a finite patch of lines off with the drawing.
+            gridOverlay.render();
         });
 
     const interactions = createGraphInteractions({
@@ -318,6 +341,7 @@ export function createTokenReconfigurationApp({
         getNodeAtPoint,
         currentTransform: () => currentTransform,
         isRepulsionEnabled: () => repulsionEnabled,
+        snapPoint: (x, y) => gridOverlay.snap(x, y),
         setOverlayRefreshPaused: (paused: boolean) => {
             overlayRefreshPaused = paused;
             if (paused) {
@@ -551,12 +575,15 @@ export function createTokenReconfigurationApp({
                 onMove: (_id, x, y) => {
                     const nodeData = getNodeById(nodeId);
                     if (nodeData) {
-                        nodeData.fx = x;
-                        nodeData.fy = y;
-                        nodeData.x = x;
-                        nodeData.y = y;
-                        nodeData.anchorX = x;
-                        nodeData.anchorY = y;
+                        // A finger drags a vertex just as a mouse does, so it
+                        // lands on the grid on exactly the same terms.
+                        const [gx, gy] = gridOverlay.snap(x, y);
+                        nodeData.fx = gx;
+                        nodeData.fy = gy;
+                        nodeData.x = gx;
+                        nodeData.y = gy;
+                        nodeData.anchorX = gx;
+                        nodeData.anchorY = gy;
                     }
                 },
                 onEnd: finishedNodeId => {
@@ -586,9 +613,16 @@ export function createTokenReconfigurationApp({
         },
     });
 
+    // Every new vertex of a mouse or finger gesture comes through here — a
+    // middle-click on the background, a right-drag released on empty space, a tap
+    // on empty space in graph mode — so this is where a new vertex is put on the
+    // grid. A vertex is placed by the same aiming as a move, and one that landed
+    // between the lines while the reader was aiming at them would have to be
+    // dragged afterwards to be aligned, which is the thing the switch is for.
     function addNodeAtPoint(x: number, y: number): GraphNode {
         recordUndoState();
-        const nodeData = graph.addNodeAtPoint(x, y);
+        const [gx, gy] = gridOverlay.snap(x, y);
+        const nodeData = graph.addNodeAtPoint(gx, gy);
         if (repulsionEnabled) {
             nodeData.fx = undefined;
             nodeData.fy = undefined;
@@ -1285,6 +1319,20 @@ export function createTokenReconfigurationApp({
         refreshOverlayState();
     }
 
+    // Turning the grid on shows it and starts landing dragged vertices on it; the
+    // two are one switch because a grid that is drawn but not followed, or obeyed
+    // while invisible, is a bug rather than a setting.
+    function setSnapToGridEnabled(enabled: boolean): void {
+        gridOverlay.setEnabled(enabled);
+    }
+
+    // The value arrives already inside the bounds the input offers; the overlay
+    // clamps again on its own, so a caller that cannot be shown a box (a future
+    // file format, a keyboard shortcut) still cannot ask for a grid of zero.
+    function setGridSpacing(spacing: number): void {
+        gridOverlay.setSpacing(spacing);
+    }
+
     function copySelection(): boolean {
         return selection.copySelection();
     }
@@ -1546,6 +1594,9 @@ export function createTokenReconfigurationApp({
         height = rect.height;
         svg.attr("width", width).attr("height", height);
         background.attr("width", width).attr("height", height);
+        // The grid covers the pane, so a pane that grew has more of it at the
+        // edges than it had before — even when the graph below did not move.
+        gridOverlay.render();
 
         if (!sizeChanged) {
             return;
@@ -1646,6 +1697,8 @@ export function createTokenReconfigurationApp({
         setRepulsionEnabled,
         setNeighborhoodCountVisibility,
         setMoveDirectionVisibility,
+        setSnapToGridEnabled,
+        setGridSpacing,
         applyLayout,
         setProblem,
         clearNodeSelection() {

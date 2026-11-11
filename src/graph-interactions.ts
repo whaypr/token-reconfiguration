@@ -42,6 +42,11 @@ interface GraphInteractionContext {
     getNodeAtPoint: (x: number, y: number, ignoredNodeId?: NodeId | null) => GraphNode | null;
     currentTransform: () => ZoomTransform;
     isRepulsionEnabled: () => boolean;
+    // Passed straight to the selection gestures, which are what move vertices. A
+    // vertex being CREATED is snapped by the caller that places it, so the drag
+    // path and the placement path each ask once, at the point where a graph
+    // coordinate becomes a vertex coordinate.
+    snapPoint(x: number, y: number): [number, number];
     setOverlayRefreshPaused: (paused: boolean) => void;
 }
 
@@ -74,6 +79,7 @@ export function createGraphInteractions(context: GraphInteractionContext): Graph
         getNodeById: context.getNodeById,
         getSelectedNodeIds: context.getSelectedNodeIds,
         isRepulsionEnabled: context.isRepulsionEnabled,
+        snapPoint: (x, y) => context.snapPoint(x, y),
         positionGraphElements: context.positionGraphElements,
         selectNodesInRectangle: context.selectNodesInRectangle,
         clearNodeSelection: context.clearNodeSelection,

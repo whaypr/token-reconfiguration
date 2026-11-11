@@ -410,6 +410,36 @@ h1 {
     flex-wrap: wrap;
 }
 
+/* The grid switch and its density on one line: the number means nothing apart
+   from the grid it belongs to, and a row of its own would read as a second,
+   unrelated setting. Wraps onto two lines in the narrowest panel rather than
+   squeezing the number box below the size a two-digit number needs. */
+.grid-snap-field {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px 12px;
+}
+
+.grid-spacing-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 0.76rem;
+}
+
+/* The width a number needs and no more. The #controls prefix is load-bearing:
+   the shared rule further up sets every number box to 34px tall, and a class
+   alone cannot outweigh an id. */
+#controls .grid-spacing-field input {
+    width: 62px;
+    min-height: 30px;
+    padding: 4px 7px;
+    text-align: right;
+}
+
 /* The three vertex-colour switches belong to one choice, so they read as a
    block: label above, one switch per line, each carrying the swatch it paints. */
 .toggle-group {
@@ -719,6 +749,25 @@ svg:active {
 
 .graph-background:active {
     cursor: grabbing;
+}
+
+/* The snap grid, drawn inside the transformed viewport so it pans and zooms with
+   the drawing it measures. The stroke is pinned to the screen: one graph unit
+   wide is invisible at a quarter zoom and a grey band at three, and a line you
+   cannot see tells you nothing about where a vertex will land. */
+.grid-layer {
+    pointer-events: none;
+}
+
+.grid-line {
+    stroke: var(--line);
+    stroke-width: 1px;
+    vector-effect: non-scaling-stroke;
+}
+
+/* The graph's own x = 0 and y = 0, which every other line is measured from. */
+.grid-line.grid-axis {
+    stroke: #b8c7d0;
 }
 
 .edge-preview {
