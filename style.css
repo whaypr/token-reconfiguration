@@ -1121,6 +1121,18 @@ svg:active {
     .workspace {
         flex-direction: row;
         align-items: stretch;
+        /* The row is measured by the canvases and not by the list of controls.
+           Without this the row's height is the tallest column's content height,
+           so opening every section made the row taller than the space the page
+           has left, the canvases stretched after it, and the whole app scrolled
+           down the window. Shrunk to what is left, the row is as high as the
+           canvas column and no higher, which is the height .controls-scroll was
+           always written to scroll inside.
+           The canvases keep their own floor through it — the min-height on the
+           svg is measured against the frames, not against this row — so a short
+           window still scrolls for the drawing rather than squashing it, exactly
+           as it did before. */
+        min-height: 0;
     }
 
     .controls-shell {
