@@ -2,6 +2,7 @@ import d3is_reconfigure from "./scenarios/d3is_reconfigure.json";
 import _2lp_reconfigure from "./scenarios/2lp_reconfigure.json";
 import _2lp_blockAccess from "./scenarios/2lp_blockAccess.json";
 import _3lp_sat from "./scenarios/3lp_sat.json";
+import _3lp_sat2 from "./scenarios/3lp_sat2.json";
 import type { Scenario } from "./types";
 
 // The bundled scenarios live as JSON rather than as TypeScript literals: they
@@ -35,6 +36,12 @@ const drawnScenarios: Scenario[] = [
         ..._3lp_sat,
         id: "3lp_sat",
         name: "3-Limited Packing | SAT",
+        description: "Goal: Find a way to place yellow token on the vertex marked with a blue square. You are not allowed to delete anything in the given graph.",
+    },
+    {
+        ..._3lp_sat2,
+        id: "3lp_sat2",
+        name: "3-Limited Packing | SAT harder",
         description: "Goal: Find a way to place yellow token on the vertex marked with a blue square. You are not allowed to delete anything in the given graph.",
     },
 ];
